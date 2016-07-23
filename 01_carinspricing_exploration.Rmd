@@ -1,0 +1,214 @@
+---
+title: "GLMs for Car Insurance Pricing: Initial Exploration"
+author: "Mick Cooney"
+date: "13 July 2016"
+output:
+  html_document:
+    toc: true
+    number_sections: true
+    fig_caption: yes
+    theme: cerulean
+    css: styles.css
+  pdf_document: default
+---
+
+<!--
+(Title:) GLMs for Car Insurance Pricing
+
+Author: Mick Cooney
+
+Date: 2016
+
+Abstract: This document describes a simple method for pricing car
+insurance based on claims data. This rmarkdown document focuses on
+loading the initial data and performing some systematic data
+exploration and cleaning.
+
+Keywords: bond portfolio
+
+-->
+
+```{r knit_opts, include = FALSE}
+rm(list = ls())
+
+knitr::opts_chunk$set(tidy       = FALSE
+                     ,cache      = FALSE
+                     ,fig.height =  8
+                     ,fig.width  = 11
+                     )
+
+library(data.table)
+library(dtplyr)
+library(dplyr)
+library(ggplot2)
+library(scales)
+library(GGally)
+
+library(CASdatasets)
+
+
+options(width            = 90)
+options(stringsAsFactors = FALSE)
+
+options(datatable.print.nrows      = 10L)
+options(datatable.prettyprint.char = 80L)
+
+source("custom_functions.R")
+```
+
+# Load Data
+
+
+```{r load_data, echo=TRUE}
+### Set up the data
+data(freMTPLfreq)
+data(freMTPLsev)
+data(freMTPL2freq)
+data(freMTPL2sev)
+
+policy1_dt <- copy(freMTPLfreq)
+claims1_dt <- copy(freMTPLsev)
+policy2_dt <- copy(freMTPL2freq)
+claims2_dt <- copy(freMTPL2sev)
+
+setDT(policy1_dt)
+setDT(claims1_dt)
+setDT(policy2_dt)
+setDT(claims2_dt)
+
+rm(freMTPLfreq)
+rm(freMTPLsev)
+rm(freMTPL2freq)
+rm(freMTPL2sev)
+
+setnames(policy1_dt, c('policy_id','claim_count','exposure','power','car_age'
+                      ,'driver_age','brand','gas','region','density'))
+print(policy1_dt)
+
+setnames(claims1_dt, c('policy_id','claim_amount'))
+print(claims1_dt)
+```
+
+
+# Initial Data Exploration and Cleaning
+
+Having loaded in the data, we want to look at the basic data types of
+the columns, along with row and columns counts. We also look at a
+quick summary of the data.
+
+```{r policy_str, echo=TRUE}
+str(policy1_dt)
+
+summary(policy1_dt)
+```
+
+We now create separate vectors for the numerical and categorical
+variables so we can automatically generate different exploratory plots
+of the data.
+
+```{r setup_exploration, echo=TRUE}
+vars_num <- c('claim_count','exposure','car_age','driver_age','density')
+
+vars_cat <- c('power','brand','gas','region')
+```
+
+## Univariate Data Exploration
+
+We create simple univariate exploratory plots.
+
+### Numeric Variables
+
+We iterate through the numeric variables, looking at a density plot
+for each one.
+
+```{r explore_numeric_data, echo=TRUE}
+for(plot_var in vars_num) {
+    plot_idx <- match(plot_var, names(policy1_dt))
+
+    explore_plot <- ggplot() +
+        geom_density(aes(x = policy1_dt[[plot_idx]])) +
+        xlab(plot_var) +
+        ggtitle(paste0("Density Plot for Variable: ", plot_var))
+
+    plot(explore_plot)
+}
+```
+
+It looks like `claim_count` has only a small number of counts, so we
+will also view the barplot of the counts for this variable:
+
+```{r explore_claim_count, echo=TRUE}
+explore_plot <- ggplot() +
+    geom_bar(aes(x = policy1_dt$claim_count)) +
+    xlab("claim_count") +
+    ggtitle("Barplot of claim_count") +
+    theme(axis.text.x = element_text(angle = 90, vjust = 0.5))
+
+plot(explore_plot)
+```
+
+### Categorical Variables
+
+We now iterate through each of the categorical variables by looking at
+boxplots of the counts of the values.
+
+```{r explore_categorical_data, echo=TRUE}
+for(plot_var in vars_cat) {
+    plot_idx <- match(plot_var, names(policy1_dt))
+
+    explore_plot <- ggplot() +
+        geom_bar(aes(x = policy1_dt[[plot_idx]])) +
+        xlab(plot_var) +
+        ggtitle(paste0("Barplot of Counts for Variable: ", plot_var)) +
+        theme(axis.text.x = element_text(angle = 90, vjust = 0.5))
+
+
+    plot(explore_plot)
+}
+```
+
+## Bivariate Data Exploration
+
+We first see how a pairs plot looks. The size of the dataset makes
+this computationally onerous, so we sample 50,000 data points and
+create the pairs plot for those.
+
+```{r plot_pairsplot, echo=TRUE, message=FALSE}
+ggpairs(policy1_dt[sample(1:.N, 50000, replace = FALSE)])
+```
+
+### density vs region
+
+Density seems a bit strange, so I want to see how density distributes
+across the regions as that also seems to be geographic.
+
+First we look at boxplots:
+
+```{r density_region_boxplot, echo=TRUE}
+ggplot(policy1_dt) +
+    geom_boxplot(aes(x = region, y = density))
+```
+
+Then we do a facetted density plot, facetting by region.
+
+```{r density_region_densityplot, echo=TRUE}
+ggplot(policy1_dt) +
+    geom_density(aes(x = density)) +
+    facet_wrap(~region, scales = 'free', ncol = 2)
+```
+
+
+
+# Data Cleaning and Feature Creation
+
+```{r add_policy_vars, echo=TRUE}
+policy1_dt[, cat_driver_age := cut(driver_age
+                                  ,c(17,22,26,42,74,Inf))]
+policy1_dt[, cat_car_age    := cut(car_age
+                                  ,c(0,1,4,15,Inf)
+                                  ,include.lowest = TRUE)]
+policy1_dt[, cat_density    := cut(density
+                                  ,c(0,40,200,500,4500,Inf)
+                                  ,include.lowest = TRUE)]
+
+```

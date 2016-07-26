@@ -1,5 +1,5 @@
 ---
-title: "GLMs for Car Insurance Pricing: Initial Exploration"
+title: "GLMs for Car Insurance Pricing: Initial Data Exploration"
 author: "Mick Cooney"
 date: "13 July 2016"
 output:
@@ -53,6 +53,8 @@ options(stringsAsFactors = FALSE)
 options(datatable.print.nrows      = 10L)
 options(datatable.prettyprint.char = 80L)
 
+set.seed(42)
+
 source("custom_functions.R")
 ```
 
@@ -90,7 +92,7 @@ print(claims1_dt)
 ```
 
 
-# Initial Data Exploration and Cleaning
+# Initial Data Exploration
 
 Having loaded in the data, we want to look at the basic data types of
 the columns, along with row and columns counts. We also look at a
@@ -123,10 +125,8 @@ for each one.
 
 ```{r explore_numeric_data, echo=TRUE}
 for(plot_var in vars_num) {
-    plot_idx <- match(plot_var, names(policy1_dt))
-
     explore_plot <- ggplot() +
-        geom_density(aes(x = policy1_dt[[plot_idx]])) +
+        geom_density(aes(x = policy1_dt[[plot_var]])) +
         xlab(plot_var) +
         ggtitle(paste0("Density Plot for Variable: ", plot_var))
 
@@ -134,18 +134,21 @@ for(plot_var in vars_num) {
 }
 ```
 
-It looks like `claim_count` has only a small number of counts, so we
-will also view the barplot of the counts for this variable:
+None of these plots seem very useful, so we try the same thing but now
+use histograms.
 
-```{r explore_claim_count, echo=TRUE}
-explore_plot <- ggplot() +
-    geom_bar(aes(x = policy1_dt$claim_count)) +
-    xlab("claim_count") +
-    ggtitle("Barplot of claim_count") +
-    theme(axis.text.x = element_text(angle = 90, vjust = 0.5))
 
-plot(explore_plot)
+```{r explore_numeric_data_barplots, echo=TRUE}
+for(plot_var in vars_num) {
+    explore_plot <- ggplot() +
+        geom_histogram(aes(x = policy1_dt[[plot_var]]), bins = 30) +
+        xlab(plot_var) +
+        ggtitle(paste0("Bar Plot for Variable: ", plot_var))
+
+    plot(explore_plot)
+}
 ```
+
 
 ### Categorical Variables
 
@@ -154,10 +157,8 @@ boxplots of the counts of the values.
 
 ```{r explore_categorical_data, echo=TRUE}
 for(plot_var in vars_cat) {
-    plot_idx <- match(plot_var, names(policy1_dt))
-
     explore_plot <- ggplot() +
-        geom_bar(aes(x = policy1_dt[[plot_idx]])) +
+        geom_bar(aes(x = policy1_dt[[plot_var]])) +
         xlab(plot_var) +
         ggtitle(paste0("Barplot of Counts for Variable: ", plot_var)) +
         theme(axis.text.x = element_text(angle = 90, vjust = 0.5))
@@ -167,14 +168,32 @@ for(plot_var in vars_cat) {
 }
 ```
 
+#### exposure
+
+The `exposure` variable is a bit strange - it seems strange to have
+policies whose duration is longer than a year in this book - but
+without knowledge of the business it is hard to tell. Let us see how
+the exposures that are longer than 1 year are distributed.
+
+```{r plot_long_exposures, echo=TRUE}
+ggplot(policy1_dt[exposure > 1]) +
+    geom_density(aes(x = exposure))
+```
+
+We could remove these policies, but I am inclined to leave them in for
+the moment at least. We may need to revisit this decision later.
+
+
 ## Bivariate Data Exploration
 
 We first see how a pairs plot looks. The size of the dataset makes
 this computationally onerous, so we sample 50,000 data points and
 create the pairs plot for those.
 
-```{r plot_pairsplot, echo=TRUE, message=FALSE}
-ggpairs(policy1_dt[sample(1:.N, 50000, replace = FALSE)])
+```{r plot_pairsplot, echo=TRUE, message=FALSE, fig.width = 20, fig.height=15}
+pairsplot_count <- 10000
+
+ggpairs(policy1_dt[, -1, with = FALSE][sample(1:.N, pairsplot_count, replace = FALSE)])
 ```
 
 ### density vs region
@@ -189,17 +208,259 @@ ggplot(policy1_dt) +
     geom_boxplot(aes(x = region, y = density))
 ```
 
-Then we do a facetted density plot, facetting by region.
+Then we do a facetted histogram, facetting by region.
 
-```{r density_region_densityplot, echo=TRUE}
+```{r density_region_histplot, echo=TRUE}
 ggplot(policy1_dt) +
-    geom_density(aes(x = density)) +
-    facet_wrap(~region, scales = 'free', ncol = 2)
+    geom_histogram(aes(x = density), bins = 50) +
+    facet_wrap(~region, scales = 'free', ncol = 2) +
+    ggtitle("density Histogram by region")
+```
+
+### claim_count vs region
+
+We will look at `claim_count` vs `region` to see if there are any
+geographic patterns.
+
+```{r claimcount_region_barplot, echo=TRUE}
+ggplot(policy1_dt) +
+    geom_bar(aes(x = claim_count)) +
+    expand_limits(x = 4) +
+    facet_wrap(~region, scales = 'free', ncol = 2) +
+    ggtitle("claim_count Barplot by region")
+```
+
+We want to normalise these counts so we can see how many claims we get
+as a proportion of the policy count in each region, so to do this we
+first need to calculate this:
+
+```{r claimprop_region_barplot, echo=TRUE}
+policy_region_dt <- policy1_dt %>%
+    group_by(region) %>%
+    summarise(num_policies = length(policy_id))
+
+policyprop_dt <- policy1_dt %>%
+    left_join(policy_region_dt, 'region') %>%
+    group_by(region, claim_count) %>%
+    summarise(count = length(policy_id)
+             ,prop  = length(policy_id) / max(num_policies))
+
+ggplot(policyprop_dt[claim_count > 0]) +
+    geom_bar(aes(x = claim_count, y = prop), stat = 'identity') +
+    expand_limits(y = 0.05) +
+    facet_wrap(~region, ncol = 2) +
+    coord_flip()
+    ggtitle("Claim Proportion Barplot by region")
+```
+
+We will also facet across the claim count so we can better compare the
+values.
+
+```{r claimprop_claimcount_barplot, echo=TRUE}
+ggplot(policyprop_dt[claim_count > 0]) +
+    geom_bar(aes(x = region, y = prop), stat = 'identity') +
+    expand_limits(x = unique(policyprop_dt$region)) +
+    facet_wrap(~claim_count, ncol = 2, scales = 'free') +
+    ggtitle("Claim Proportion Barplot by claim_count and region")
 ```
 
 
 
+### region vs car_age
+
+We want to see a distribution of `car_age` by region in the data:
+
+```{r region_carage_boxplot, echo=TRUE}
+ggplot(policy1_dt) +
+    geom_boxplot(aes(x = region, y = car_age)) +
+    ggtitle("Boxplot of car_age by region")
+```
+
+We may need to filter out cars that are exceptionally old.
+
+## Claim Data
+
+First we look at a histogram of the individual claims without
+aggregating them by policy.
+
+```{r plot_claim_histogram, echo=TRUE, message=FALSE}
+ggplot(claims1_dt) +
+    geom_histogram(aes(x = claim_amount), bins = 50)
+```
+
+This does not tell us much due to the skewed nature of the claims, so
+we instead look at all claims below EUR 25,000:
+
+```{r plot_claim_histogram_2, echo=TRUE, message=FALSE}
+ggplot(claims1_dt[claim_amount < 25000]) +
+    geom_histogram(aes(x = claim_amount), bins = 50) +
+    scale_x_continuous(label = dollar)
+```
+
+Claims above 25,000 are so skewed that we look at these on a separate
+plot with a logscale on the x-axis.
+
+```{r plot_claim_histogram_3, echo=TRUE, message=FALSE}
+ggplot(claims1_dt[claim_amount >= 25000]) +
+    geom_histogram(aes(x = claim_amount), bins = 50) +
+    scale_x_log10(label = dollar)
+```
+
+To get a sense of the skew in terms of the right tail, we look at
+a cumulative density plot of the claim amounts:
+
+```{r plot_claims_cuml, echo=TRUE}
+ggplot(claims1_dt) +
+    geom_line(aes(x = seq_along(claim_amount) / length(claim_amount)
+                 ,y = sort(claim_amount))) +
+    scale_y_log10(label = dollar) +
+    xlab("Cumulative Probability") +
+    ylab("Claim Amount")
+```
+
+
+### Aggregate Claims by Policy
+
+We now add up all the claims on a single policy and treat them
+as a single amount.
+
+
+```{r summarise_claims, echo=TRUE}
+claims_amount_dt <- claims1_dt %>%
+    group_by(policy_id) %>%
+    summarise(num_claim    = length(claim_amount)
+             ,total_amount = sum(claim_amount)) %>%
+    arrange(-total_amount, -num_claim)
+
+policyclaim_dt <- policy1_dt %>%
+    left_join(claims_amount_dt, by = 'policy_id') %>%
+    mutate(total_amount = replace(total_amount, is.na(total_amount), 0))
+```
+
+Now we look at the total claims per policy.
+
+```{r policy_claimtotal, echo=TRUE}
+ggplot(claims_amount_dt) +
+    geom_histogram(aes(x = total_amount), bins = 50) +
+    scale_x_log10(label = dollar)
+```
+
+We first check that the merge worked properly by ensuring that
+`claim_count` and `num_claim` are the same.
+
+```{r check_claim_count, echo=TRUE}
+policyclaim_dt %>%
+    filter(claim_count != num_claim) %>%
+    print
+```
+
+We look at the cumulative claims per policy.
+
+```{r plot_claimstotal_cuml, echo=TRUE}
+ggplot(claims_amount_dt) +
+    geom_line(aes(x = seq_along(total_amount) / length(total_amount)
+                 ,y = sort(total_amount))) +
+    scale_y_log10(label = dollar) +
+    xlab("Cumulative Probability") +
+    ylab("Claim Amount")
+```
+
+### claimtotal by region
+
+We do a boxplot of the total claims by region. We first will plot with
+all the claims to see if there is a regional pattern in the larger
+claims as we expect these amounts will dominate any visuals.
+
+```{r totalamount_region_boxplot, echo=TRUE}
+ggplot(policyclaim_dt[total_amount > 0]) +
+    geom_boxplot(aes(x = region, y = total_amount)) +
+    scale_y_log10(label = dollar) +
+    ggtitle("Boxplot of Total Claims on a Policy by region")
+```
+
+We now filter out the larger claims and do a boxplot for claims
+between 0 and 50,000.
+
+```{r totalamount_region_standard, echo=TRUE}
+ggplot(policyclaim_dt[total_amount > 0 & total_amount < 25000]) +
+    geom_boxplot(aes(x = region, y = total_amount)) +
+#    scale_y_log10(label = dollar) +
+    ggtitle("Boxplot of Total Claims on a Policy by region")
+```
+
+
+### Power-law Scaling
+
+We look at the log-log plot of claim size against the cumulative
+number of claims of at least the size to investigate if the claim
+frequency obeys a power law.
+
+```{r claim_power_law, echo=TRUE}
+logclaimsize_seq <- seq(0, 7, by = 0.1)
+
+powerlaw_dt <- data.table(
+    logsize = logclaimsize_seq
+   ,count   = sapply(logclaimsize_seq
+                    ,function(iter_m)
+                         nrow(claims1_dt[claim_amount > 10^iter_m]))
+)
+
+ggplot(powerlaw_dt) +
+    geom_line(aes(x = logsize, y = log(count))) +
+    xlab("Log of Cumulative Claim Size") +
+    ylab("Log of Count")
+```
+
+For claims about 1,000 ($\log \text{Claim} = 3$) a straight line could
+do a good job of fitting the curve, so we look at that
+
+```{r claim_power_law_line, echo=TRUE}
+ggplot(powerlaw_dt[logsize >= 3]) +
+    geom_line(aes(x = logsize, y = log(count))) +
+    geom_smooth(aes(x = logsize, y = log(count)), method = 'lm', se = TRUE) +
+    xlab("Log of Cumulative Claim Size") +
+    ylab("Log of Count")
+```
+
+Encouraged by the above plots, we will model part of the claim
+distribution with a power law - probably to work on the likelihood of
+larger claims.
+
+
 # Data Cleaning and Feature Creation
+
+We now turn our attention to data cleaning and feature creation in the
+data. We do not have any premium information for the policy data, and
+may wish to convert some of the features from continuous to
+categorical - especially for variables such as age where we expect a
+non-linear influence on the output.
+
+We may exclude data from the analysis if they are outliers.
+
+One issue with removing outliers at this stage is that we are not
+entirely sure what counts as an outlier. It may be safer for the
+moment to leave them in and perhaps filter them out just prior to
+modelling when we have a better sense of what to do. We may wish to
+keep all the data for moment and split the modelling tasks into
+different parts, capturing different aspects of the data in different
+ways.
+
+For the moment, we will leave the data intact.
+
+
+## Feature Creation
+
+We now turn our attention
+
+### Binning Continuous Variables
+
+We aggregate a few of the continuous features that are unlikely to
+have any kind of linear response in terms of the data: `driver_age`,
+`car_age` and `density`.
+
+We have picked a somewhat arbitrary set of cutoffs to discretise the
+variables for these three variables and will check their use in the
+models we build.
 
 ```{r add_policy_vars, echo=TRUE}
 policy1_dt[, cat_driver_age := cut(driver_age
@@ -210,5 +471,7 @@ policy1_dt[, cat_car_age    := cut(car_age
 policy1_dt[, cat_density    := cut(density
                                   ,c(0,40,200,500,4500,Inf)
                                   ,include.lowest = TRUE)]
-
 ```
+
+We will attempt to build models using both continuous and binned
+versions of this data.

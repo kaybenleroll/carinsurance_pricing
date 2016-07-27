@@ -19,12 +19,12 @@ Author: Mick Cooney
 
 Date: 2016
 
-Abstract: This document describes a simple method for pricing car
-insurance based on claims data. This rmarkdown document focuses on
-loading the initial data and performing some systematic data
-exploration and cleaning.
+Abstract: This document is the first in a series for a project looking
+at a simple method for pricing car insurance based on claims
+data. This rmarkdown document focuses on loading the initial data and
+performing some systematic data exploration and cleaning.
 
-Keywords: bond portfolio
+Keywords: car-insurance data-exploration
 
 -->
 
@@ -43,6 +43,7 @@ library(dplyr)
 library(ggplot2)
 library(scales)
 library(GGally)
+library(feather)
 
 library(CASdatasets)
 
@@ -99,9 +100,26 @@ the columns, along with row and columns counts. We also look at a
 quick summary of the data.
 
 ```{r policy_str, echo=TRUE}
-str(policy1_dt)
+glimpse(policy1_dt)
 
 summary(policy1_dt)
+```
+
+The categorical variables here are listed as factors so the first
+thing I will do is convert them to character strings. Factors can have
+some strange 'gotchas' in how they are used, so it is safe to switch
+them to character variables at the very start.
+
+```{r convert_factors_strings, echo=TRUE}
+### We use data.table ':=' syntax for this as it is fast and easy to
+### understand in this case.
+###
+### For future data manipulation we will use dplyr for its readability.
+
+policy1_dt[, power  := as.character(power)]
+policy1_dt[, brand  := as.character(brand)]
+policy1_dt[, gas    := as.character(gas)]
+policy1_dt[, region := as.character(region)]
 ```
 
 We now create separate vectors for the numerical and categorical
@@ -427,7 +445,7 @@ distribution with a power law - probably to work on the likelihood of
 larger claims.
 
 
-# Data Cleaning and Feature Creation
+# Data Cleaning
 
 We now turn our attention to data cleaning and feature creation in the
 data. We do not have any premium information for the policy data, and
@@ -448,11 +466,23 @@ ways.
 For the moment, we will leave the data intact.
 
 
-## Feature Creation
+# Feature Creation
 
-We now turn our attention
+We turn our attention to adding new variables to our dataset to assist
+with the modelling. Before we do this, we should look at a summary of
+the data.
 
-### Binning Continuous Variables
+```{r data_summary, echo=TRUE}
+summary(policyclaim_dt)
+```
+
+From our initial data exploration in the previous document, we have a
+few manipulations that may be worthwhile. We will bin some of the
+numeric variables, and we might combine a number of levels in some
+categorical variables to reduce the amount of work required.
+
+
+## Binning Continuous Variables
 
 We aggregate a few of the continuous features that are unlikely to
 have any kind of linear response in terms of the data: `driver_age`,
@@ -463,15 +493,146 @@ variables for these three variables and will check their use in the
 models we build.
 
 ```{r add_policy_vars, echo=TRUE}
-policy1_dt[, cat_driver_age := cut(driver_age
-                                  ,c(17,22,26,42,74,Inf))]
-policy1_dt[, cat_car_age    := cut(car_age
-                                  ,c(0,1,4,15,Inf)
-                                  ,include.lowest = TRUE)]
-policy1_dt[, cat_density    := cut(density
-                                  ,c(0,40,200,500,4500,Inf)
-                                  ,include.lowest = TRUE)]
+policyclaim_dt <- policyclaim_dt %>%
+    mutate(cat_driver_age = cut(driver_age, c(17,22,26,42,74,Inf))
+          ,cat_car_age    = cut(car_age,    c(0,1,4,15,Inf)
+                               ,include.lowest = TRUE)
+          ,cat_density    = cut(density, c(0,40,200,500,4500,Inf)
+                               ,include.lowest = TRUE)) %>%
+    mutate(cat_driver_age = as.character(cat_driver_age)
+          ,cat_car_age    = as.character(cat_car_age)
+          ,cat_density    = as.character(cat_density))
+
+glimpse(policyclaim_dt)
 ```
 
 We will attempt to build models using both continuous and binned
-versions of this data.
+versions of this data and compare the performance of them all.
+
+
+## Aggregative Categorical Levels
+
+A number of our categorical variables have long tails: they have a
+reasonable number of values with small counts. This can cause an issue
+as parameter estimates for these levels may lack robustness and
+uncertainty limits are likely to be wide. To help with this, we often
+create a 'catch-all' value and aggregate all levels below a certain
+count to be this 'catch-all' value.
+
+### power
+
+```{r power_barplot, echo=TRUE}
+ggplot(policyclaim_dt) +
+    geom_bar(aes(x = power)) +
+    xlab('Value') +
+    ggtitle("Barplot of Counts for Variable power")
+```
+
+There is quite a long tail for the higher letters, so we redo this
+plot showing the total count of the policies as we account for
+additional power levels. This should give us a sense for the point at
+which we agglomerate the levels into a single value.
+
+```{r aggregate_power_data, echo=TRUE}
+plot_dt <- policyclaim_dt %>%
+    group_by(power) %>%
+    summarise(count = length(policy_id)) %>%
+    arrange(-count) %>%
+    summarise(power, cumlcount = cumsum(count))
+
+plot_dt$power <- factor(plot_dt$power, levels = plot_dt$power)
+
+ggplot(plot_dt) +
+    geom_bar(aes(x = power, y = cumlcount), stat = 'identity')
+```
+
+Looking this plot, we see that the levels from $i$ on in the plot can
+be aggregated. We combine $(i,k,l,m,o,n)$ into a single level `other`.
+
+```{r combine_power_levels, echo=TRUE}
+power_other <- c('i','k','l','m','o','n')
+
+policyclaim_dt <- policyclaim_dt %>%
+    mutate(agg_power = ifelse(power %in% power_other, 'other', power))
+
+ggplot(policyclaim_dt) +
+    geom_bar(aes(x = agg_power)) +
+    ggtitle("Barplot of new variable: agg_power")
+```
+
+We may have been slightly too aggressive with this, so just in case,
+we create a new variable `agg_power_2` where we keep value $i$
+separate and aggregate the others.
+
+
+```{r combine_power_levels_second, echo=TRUE}
+power_other <- c('k','l','m','o','n')
+
+policyclaim_dt <- policyclaim_dt %>%
+    mutate(agg_power_2 = ifelse(power %in% power_other, 'other', power))
+
+ggplot(policyclaim_dt) +
+    geom_bar(aes(x = agg_power_2)) +
+    ggtitle("Barplot of new variable: agg_power_2")
+
+```
+
+`agg_power_2` would appear to be a better aggregation of levels in
+terms of balanced counts - though it should be said that this may not
+be in anyway good or desirable.
+
+
+### region
+
+The `region` variable is imbalanced, so we give it similar treatment.
+
+```{r aggregate_region_data, echo=TRUE}
+plot_dt <- policyclaim_dt %>%
+    group_by(region) %>%
+    summarise(count = length(policy_id)) %>%
+    arrange(-count) %>%
+    summarise(region, cumlcount = cumsum(count))
+
+plot_dt$region <- factor(plot_dt$region, levels = plot_dt$region)
+
+ggplot(plot_dt) +
+    geom_bar(aes(x = region, y = cumlcount), stat = 'identity')
+```
+
+We will try to aggregate up the last three values: $R25$, $R23$ and $R74$:
+
+```{r combine_region_levels, echo=TRUE}
+region_other <- c('R25','R23','R74')
+
+policyclaim_dt <- policyclaim_dt %>%
+    mutate(agg_region = ifelse(region %in% region_other, 'other', region))
+
+ggplot(policyclaim_dt) +
+    geom_bar(aes(x = agg_region)) +
+    ggtitle("Barplot of new variable: agg_region")
+```
+
+While not balanced, `agg_region` has much less of a tail. It will be
+interesting to see if this aggregation has any effect on model
+performance.
+
+
+# Write to Disk
+
+We have done some chopping and munging with this data, and we wish to
+preserve some of this work across the documents so we save them to
+disk in both CSV and feather format.
+
+```{r write_data_disk, echo=TRUE}
+### We first drop variable num_claim as it repeats claim_count
+policyclaim_dt[, num_claim := NULL]
+
+
+write.csv(policy1_dt,         file = 'data/policy_data.csv',      row.names = FALSE)
+write.csv(claims1_dt,         file = 'data/claim_data.csv',       row.names = FALSE)
+write.csv(policyclaim_dt,     file = 'data/policyclaim_data.csv', row.names = FALSE)
+
+write_feather(policy1_dt,     path = 'data/policy_data.feather')
+write_feather(claims1_dt,     path = 'data/claim_data.feather')
+write_feather(policyclaim_dt, path = 'data/policyclaim_data.feather')
+```

@@ -1,0 +1,82 @@
+---
+title: "GLMs for Car Insurance Pricing: Initial Modeling"
+author: "Mick Cooney"
+date: "13 July 2016"
+output:
+  html_document:
+    toc: true
+    number_sections: true
+    fig_caption: yes
+    theme: cerulean
+    css: styles.css
+  pdf_document: default
+---
+
+<!--
+(Title:) GLMs for Car Insurance Pricing
+
+Author: Mick Cooney
+
+Date: 2016
+
+Abstract: This document is part of a series investigating the use of
+generalised linear models to price car insurance. This document
+focuses on the production of some simple GLM models for both a Poisson
+and a Gamma process to assess both the frequency and the size of
+claims. We will discuss different ways to model claims and then
+combine these to produce a price for the premium.
+
+
+Keywords: car-insurance
+
+-->
+
+```{r knit_opts, include = FALSE}
+rm(list = ls())
+
+knitr::opts_chunk$set(tidy       = FALSE
+                     ,cache      = FALSE
+                     ,fig.height =  8
+                     ,fig.width  = 11
+                     )
+
+library(data.table)
+library(dtplyr)
+library(dplyr)
+library(ggplot2)
+library(scales)
+library(feather)
+
+options(width            = 90)
+options(stringsAsFactors = FALSE)
+
+options(datatable.print.nrows      = 10L)
+options(datatable.prettyprint.char = 80L)
+
+set.seed(142)
+
+source("custom_functions.R")
+```
+
+# Load Data
+
+In the previous document we saved our work as `feather` files and so
+we restore those tables now. We will mainly work with the
+`policyclaim_dt` table but keep the other two tables in the workspace
+as they may be useful later.
+
+```{r load_data, echo=TRUE}
+policy1_dt     <- read_feather("data/policy_data.feather")
+claim1_dt      <- read_feather("data/claim_data.feather")
+policyclaim_dt <- read_feather("data/policyclaim_data.feather")
+
+setDT(policy1_dt)
+setDT(claim1_dt)
+setDT(policyclaim_dt)
+
+glimpse(policyclaim_dt)
+```
+
+We convert the tables to `data.table` as this makes some of the later
+work a little faster as we can add columns to tables in-place
+efficiently.

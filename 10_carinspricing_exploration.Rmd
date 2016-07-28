@@ -85,7 +85,7 @@ rm(freMTPL2freq)
 rm(freMTPL2sev)
 
 setnames(policy1_dt, c('policy_id','claim_count','exposure','power','car_age'
-                      ,'driver_age','brand','gas','region','density'))
+                      ,'driver_age','brand','fuel','region','density'))
 print(policy1_dt)
 
 setnames(claims1_dt, c('policy_id','claim_amount'))
@@ -118,7 +118,7 @@ them to character variables at the very start.
 
 policy1_dt[, power  := as.character(power)]
 policy1_dt[, brand  := as.character(brand)]
-policy1_dt[, gas    := as.character(gas)]
+policy1_dt[, fuel   := as.character(fuel)]
 policy1_dt[, region := as.character(region)]
 ```
 
@@ -129,7 +129,7 @@ of the data.
 ```{r setup_exploration, echo=TRUE}
 vars_num <- c('claim_count','exposure','car_age','driver_age','density')
 
-vars_cat <- c('power','brand','gas','region')
+vars_cat <- c('power','brand','fuel','region')
 ```
 
 ## Univariate Data Exploration

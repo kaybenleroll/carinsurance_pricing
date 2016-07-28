@@ -80,3 +80,301 @@ glimpse(policyclaim_dt)
 We convert the tables to `data.table` as this makes some of the later
 work a little faster as we can add columns to tables in-place
 efficiently.
+
+For the moment, we are not really building any predictive models, so
+we are not doing the standard train/test split. We will approach this
+later when building models and using them to produce predictions.
+
+# Modelling Claims
+
+To model the claims in the book of policy we split the claim modelling
+into two parts: we first try to model the frequency of claims for each
+policy, and then we try to assess the size of the claims. By
+multiplying these two together we get a sense of the cost of each
+policy.
+
+Due to the highly random nature of claim costs, we expect it to be
+much harder to predict the claim size from the covariates. Most of the
+predictive power is likely to be in modelling the claims frequency.
+
+We will need to do some further data exploration as part of this work,
+but rather than trying to understand the data, the purpose of this is
+model-building: we want to get a sense for how the outputs of interest
+vary across the different parameters and see if we can improve the
+models by using this.
+
+## Modelling the Claim Frequency
+
+The standard method for modelling the frequency of an event is the
+*Poisson* process - we assume events occur randomly but distributed as
+a Poisson process, and then our predictions affect the parameter of
+this process: the *rate* parameter $\lambda$.
+
+The $\lambda$ parameter in a Poisson process is the frequency of the
+occurrence for a given unit of time. The most natural unit of time for
+us is a year - the standard length of exposure for a policy - and so
+if $\lambda = 2$ that means we expect an event to occur twice a year
+on average.
+
+Before we model anything with the data, we first take a look at the
+overall rate of claims on the book as a whole. This allows us to
+anchor our expectations for parameters, not to mention that it serves
+as a simple 'sanity' check for the data.
+
+```{r calc_claim_rate, echo=TRUE}
+policyclaim_dt %>%
+    summarise(claim_rate = sum(claim_count) / sum(exposure))
+```
+
+The overall claim rate for the book as a whole is just under 0.07
+claims per policy per year.
+
+Breaking this down a little further, we can do a similar calculation
+by different combinations of categorical variables, such as by region
+or by age category.
+
+```{r claimrate_region, echo=TRUE}
+claimrate_region_dt <- policyclaim_dt %>%
+    group_by(region) %>%
+    summarise(claimrate = sum(claim_count) / sum(exposure))
+
+ggplot(claimrate_region_dt) +
+    geom_point(aes(x = region, y = claimrate)) +
+    expand_limits(y = c(0, 0.1)) +
+    xlab("Region") +
+    ylab("Claim Rate") +
+    ggtitle("Rate of Claims across Regions")
+```
+
+For the purposes of looking at the effect of age on claim rates, we
+will look at the categorised data in preference to using it as a
+continuous variable. We may use either in the modelling, but for
+visualisation of this effect, we use the categories.
+
+```{r claimrate_cat_driverage, echo=TRUE}
+claimrate_driverage_dt <- policyclaim_dt %>%
+    group_by(cat_driver_age) %>%
+    summarise(claimrate = sum(claim_count) / sum(exposure))
+
+ggplot(claimrate_driverage_dt) +
+    geom_point(aes(x = cat_driver_age, y = claimrate)) +
+    expand_limits(y = c(0, 0.2)) +
+    xlab("Driver Age") +
+    ylab("Claim Rate") +
+    ggtitle("Rate of Claims across Driver Age categories")
+```
+
+There is a strong pattern here: younger drivers crash more - not an
+unexpected result. We will try the same thing but with the actual
+value, just to get a sense of the relationship between age and claim
+frequency.
+
+```{r claimrate_driverage_plot, echo = TRUE}
+claimrate_driverage_dt <- policyclaim_dt %>%
+    mutate(group_age = as.character(driver_age)) %>%
+    group_by(group_age) %>%
+    summarise(claimrate = sum(claim_count) / sum(exposure))
+
+ggplot(claimrate_driverage_dt) +
+    geom_point(aes(x = group_age, y = claimrate)) +
+    expand_limits(y = 0) +
+    xlab("Driver Age") +
+    ylab("Claim Rate") +
+    ggtitle("Rate of Claims across Driver Age") +
+    theme(axis.text.x = element_text(angle = 90, vjust = 0.5))
+```
+
+Treating ages a more continuous variable for grouping does show a
+nonlinear form, but for the higher age drivers there is so little data
+that we will stick with the categories we have for now and see where
+that leads us.
+
+### Poisson Regression
+
+We turn our attention to building a first model for this: we will
+construct a GLM for the claim_count and use a Poisson link function to
+estimate our regression coefficients. This means we are regressing on
+the rate parameter of the Poisson function: our estimates can be
+interpreted as directly affected the rate of claims expected.
+
+Before we begin, we do need to deal with the `exposure` variable: not
+all policies were in force for 1 year and our model needs to account
+for this. Strangely, we have policies in the dataset that had exposure
+for longer than a year also - we may end up excluding them later.
+
+To understand this, we will go back to the underlying mathematics of
+this process.
+
+Suppose we have $Y_i$, the number of claims from policy $i$ in a
+year. Assuming the underlying process is Poisson-distributed, this
+means that in units of a year we have
+
+$$ Y_i \sim \mathcal{P}(N_i) $$
+
+where $N_i$ is the underlying rate of claims for policy $i$.
+
+If policy $i$ is only in force for a fraction of the year, $E_i$, then
+$N_i$ is unobserveable: we can only observe $Y_i$ during the period of
+time $E_i$.
+
+Thus, we have
+
+$$ Y_i \sim \mathcal{P}(\lambda_i \, E_i). $$
+
+For Poisson regression we use a logarithm link function so that
+
+$$ \lambda_i = \exp{(X_i \beta)} $$
+
+and
+
+$$ Y_i \sim \mathcal{P}(e^{X_i \beta + \log E_i}) $$.
+
+For regression purposes, $\log E_i$ is an offset to RHS of the
+equation, and we use `offset()` in the formula to account for this.
+
+### A Simple Claim-rate Model
+
+Before we start modeling the rate of claims "in anger", we first get a
+sense for how this GLM works - modelling incident rates via a Poisson
+process. To that end, we will start with a very simple model and
+estimate the claim rate using only the type of fuel the car uses:
+
+```{r claimrate_fuelmodel, echo=TRUE}
+model_fuel <- glm(claim_count ~ 0 + fuel + offset(log(exposure))
+             ,family = poisson
+             ,data = policyclaim_dt)
+
+summary(model_fuel)
+```
+
+We now try to understand the meaning of this output.
+
+We have added the $0$ to the formula to prevent the 'Diesel' level for
+`fuel` to be added to the intercept - we want two seperate values shown
+in the output.
+
+The outputs are on the log scale, if we want to see their 'natural'
+values, i.e. the impact they have on the incidence rate, we need to
+exponentiate them.
+
+```{r claimrate_fuelmodel_coefs, echo=TRUE}
+exp(coef(model_fuel))
+```
+
+According to this model, Diesel cars have claims at a rate of 0.0747
+per year, whereas Regular fuel cars incur claims at a rate of 0.0652.
+
+As a quick sanity check, we create some sample data and predict the
+output. If the data is for a year's exposure with both a Diesel and
+Regular car, we expect to get similar answers as above:
+
+```{r claimrate_fuelmodel_predict, echo=TRUE}
+test_dt <- data.table(fuel     = c("Diesel", "Regular")
+                     ,exposure = 1)
+
+predict(model_fuel, newdata = test_dt, type = 'response')
+```
+
+We see that the predicted claim rates are the same as the coefficients
+of the model, matching what we would expect.
+
+How does this compare to the observed claim rate observed by splitting
+across fuel type?
+
+```{r claimrate_fuel_observed, echo=TRUE}
+policyclaim_dt %>%
+    group_by(fuel) %>%
+    summarise(claim_rate = sum(claim_count) / sum(exposure))
+```
+
+We recover the same claim rates by fuel using all the above
+approaches. This makes sense, as we are doing the same thing in
+different ways, so it is good that we get the same answer each time!
+
+
+### Building the GLM
+
+We start with a simple GLM with a small number of covariates (using
+some of our new engineered features):
+
+```{r claimrate_model_1, echo=TRUE}
+model1 <- glm(claim_count ~ cat_driver_age + density + agg_region +
+                            offset(log(exposure))
+             ,family = poisson
+             ,data = policyclaim_dt)
+
+summary(model1)
+```
+
+Not that since we have a number of categorical variables, the first
+level of each variable is subsumed by the intercept.
+
+This explains why all the `cat_driver_age` levels in the summary are
+negative. Younger drivers have higher claim rates and so being in a
+different age category tends to reduce the rate of claims made.
+
+The above model has a single continuous variable: `density` and it is
+quite possible that assuming a linear relationship between this and
+the claim rate is flawed, so we will remove it and refit the model to
+see the effect.
+
+```{r claimrate_model_2, echo=TRUE}
+model2 <- glm(claim_count ~ cat_driver_age + agg_region +
+                            offset(log(exposure))
+             ,family = poisson
+             ,data = policyclaim_dt)
+
+summary(model2)
+```
+
+This model does not fit as well - there was information in `density`
+that is not captured by `region`.
+
+#### Adding Vehicle Details
+
+We also need to take into account the type of vehicle being
+insured. It seems sensible that different car types will have
+different effects on the likelihood of a claim. The dataset has a
+number of variables related to the vehicle:
+
+* `car_age`
+* `power`
+* `brand`
+* `fuel`
+
+We will try adding all the variables (using our modified versions
+where appropriate):
+
+```{r claimrate_model_3, echo=TRUE}
+model3 <- glm(claim_count ~ cat_driver_age + agg_region +
+                            cat_car_age + agg_power_2 + brand + fuel +
+                            offset(log(exposure))
+             ,family = poisson
+             ,data = policyclaim_dt)
+
+summary(model3)
+```
+
+The AIC for this model is smaller, matching our intuition that vehicle
+data has a strong effect on the rate of claims for a policy.
+
+Our current aim is merely to get a feel for the models, so we will not
+pay too much attention to model assessment or validation. For
+starters, we have done little pruning of the data and have no created
+any sort of holdout set, and such a process could easily change our
+inferences!
+
+Instead, we leave it there and instead turn our attention to modelling
+the size of the claims.
+
+
+## Modelling Claim Size
+
+We turn our attention to modelling the size of the claim, given that a
+claim has occurred. We use the individual claim data for this, but
+will use variables from the claim data also.
+
+
+
+
+# Model Assessment

@@ -347,19 +347,19 @@ as a single amount.
 claims_amount_dt <- claims1_dt %>%
     group_by(policy_id) %>%
     summarise(num_claim    = length(claim_amount)
-             ,total_amount = sum(claim_amount)) %>%
-    arrange(-total_amount, -num_claim)
+             ,total_claims = sum(claim_amount)) %>%
+    arrange(-total_claims, -num_claim)
 
 policyclaim_dt <- policy1_dt %>%
     left_join(claims_amount_dt, by = 'policy_id') %>%
-    mutate(total_amount = replace(total_amount, is.na(total_amount), 0))
+    mutate(total_claims = replace(total_claims, is.na(total_claims), 0))
 ```
 
 Now we look at the total claims per policy.
 
 ```{r policy_claimtotal, echo=TRUE}
 ggplot(claims_amount_dt) +
-    geom_histogram(aes(x = total_amount), bins = 50) +
+    geom_histogram(aes(x = total_claims), bins = 50) +
     scale_x_log10(label = dollar)
 ```
 
@@ -376,8 +376,8 @@ We look at the cumulative claims per policy.
 
 ```{r plot_claimstotal_cuml, echo=TRUE}
 ggplot(claims_amount_dt) +
-    geom_line(aes(x = seq_along(total_amount) / length(total_amount)
-                 ,y = sort(total_amount))) +
+    geom_line(aes(x = seq_along(total_claims) / length(total_claims)
+                 ,y = sort(total_claims))) +
     scale_y_log10(label = dollar) +
     xlab("Cumulative Probability") +
     ylab("Claim Amount")
@@ -390,8 +390,8 @@ all the claims to see if there is a regional pattern in the larger
 claims as we expect these amounts will dominate any visuals.
 
 ```{r totalamount_region_boxplot, echo=TRUE}
-ggplot(policyclaim_dt[total_amount > 0]) +
-    geom_boxplot(aes(x = region, y = total_amount)) +
+ggplot(policyclaim_dt[total_claims > 0]) +
+    geom_boxplot(aes(x = region, y = total_claims)) +
     scale_y_log10(label = dollar) +
     ggtitle("Boxplot of Total Claims on a Policy by region")
 ```
@@ -400,8 +400,8 @@ We now filter out the larger claims and do a boxplot for claims
 between 0 and 50,000.
 
 ```{r totalamount_region_standard, echo=TRUE}
-ggplot(policyclaim_dt[total_amount > 0 & total_amount < 25000]) +
-    geom_boxplot(aes(x = region, y = total_amount)) +
+ggplot(policyclaim_dt[total_claims > 0 & total_claims < 25000]) +
+    geom_boxplot(aes(x = region, y = total_claims)) +
 #    scale_y_log10(label = dollar) +
     ggtitle("Boxplot of Total Claims on a Policy by region")
 ```

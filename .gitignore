@@ -4,3 +4,6 @@
 
 data/*.feather
 data/*.csv
+
+*_cache/*
+*_files/*

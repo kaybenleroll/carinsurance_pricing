@@ -267,7 +267,7 @@ ggplot(policyprop_dt[claim_count > 0]) +
     geom_bar(aes(x = claim_count, y = prop), stat = 'identity') +
     expand_limits(y = 0.05) +
     facet_wrap(~region, ncol = 2) +
-    coord_flip()
+    coord_flip() +
     ggtitle("Claim Proportion Barplot by region")
 ```
 

@@ -66,8 +66,8 @@ we restore those tables now. We will mainly work with the
 as they may be useful later.
 
 ```{r load_data, echo=TRUE}
-policy_dt     <- read_feather("data/policy_data.feather")
-claim_dt      <- read_feather("data/claim_data.feather")
+policy_dt      <- read_feather("data/policy_data.feather")
+claim_dt       <- read_feather("data/claim_data.feather")
 policyclaim_dt <- read_feather("data/policyclaim_data.feather")
 
 setDT(policy_dt)
@@ -405,7 +405,8 @@ It is so bad in fact, it might be worth looking at a plot.
 ```{r claimsize_lognormal_plot, echo=TRUE}
 ggplot(claimdata_dt) +
     geom_line(aes(x = claim_amount, y = claim_amount), size= 0.25) +
-    geom_point(aes(x = claim_amount, y = exp(predict(model4)))) +
+    geom_point(aes(x = claim_amount, y = exp(predict(model4, type = 'response')))
+              ,size = 0.4, alpha = 0.2) +
     expand_limits(y = 0) +
     xlab("Claim Amount") +
     ylab("Predicted Amount")
@@ -428,7 +429,8 @@ want to plot the outputs against the real values in a similar way.
 ```{r claimsize_gamma_plot, echo=TRUE}
 ggplot(claimdata_dt) +
     geom_line(aes(x = claim_amount, y = claim_amount), size = 0.25) +
-    geom_point(aes(x = claim_amount, y = exp(predict(model5)))) +
+    geom_point(aes(x = claim_amount, y = predict(model5, type = 'response'))
+              ,size = 0.4, alpha = 0.2) +
     expand_limits(y = 0) +
     xlab("Claim Amount") +
     ylab("Predicted Amount")
@@ -449,7 +451,8 @@ summary(model6)
 
 ggplot(claimdata_dt) +
     geom_line(aes(x = claim_amount, y = claim_amount), size = 0.25) +
-    geom_point(aes(x = claim_amount, y = exp(predict(model6)))) +
+    geom_point(aes(x = claim_amount, y = exp(predict(model6, type = 'response')))
+              ,size = 0.4, alpha = 0.2) +
     expand_limits(y = 0) +
     xlab("Claim Amount") +
     ylab("Predicted Amount")
@@ -459,6 +462,22 @@ Again we have a similar problem - the model is terrible. Alarmingly,
 it focuses all the claims at a small part of the observed claims
 distribution and so is very bad for prediction. We need better.
 
+```{r claimsize_gamma_2, echo=TRUE}
+model7 <- glm(claim_amount ~ brand + cat_car_age + cat_driver_age +
+                             fuel + agg_region
+             ,family = Gamma(link = 'log')
+             ,data = claimdata_dt)
+
+summary(model7)
+
+ggplot(claimdata_dt) +
+    geom_line(aes(x = claim_amount, y = claim_amount), size = 0.25) +
+    geom_point(aes(x = claim_amount, y = predict(model7, type = 'response'))
+              ,size = 0.4, alpha = 0.2) +
+    expand_limits(y = 0) +
+    xlab("Claim Amount") +
+    ylab("Predicted Amount")
+```
 
 # Model Assessment
 
@@ -498,14 +517,15 @@ claim_5000_dt <- claimdata_dt %>%
 ```
 
 ```{r claims_5000_lognormal, echo=TRUE}
-model7 <- lm(log(claim_amount) ~ power + brand + cat_car_age
+model8 <- lm(log(claim_amount) ~ power + brand + cat_car_age
             ,data = claim_5000_dt)
 
-summary(model7)
+summary(model8)
 
 ggplot(claim_5000_dt) +
     geom_line(aes(x = claim_amount, y = claim_amount), size = 0.25) +
-    geom_point(aes(x = claim_amount, y = exp(predict(model7)))) +
+    geom_point(aes(x = claim_amount, y = exp(predict(model8, type = 'response')))
+              ,size = 0.4, alpha = 0.2) +
     expand_limits(y = 0) +
     xlab("Claim Amount") +
     ylab("Predicted Amount")
@@ -514,21 +534,67 @@ ggplot(claim_5000_dt) +
 We now try using a Gamma distribution:
 
 ```{r claims_5000_gamma, echo=TRUE}
-model8 <- glm(claim_amount ~ power + brand + cat_car_age
+model9 <- glm(claim_amount ~ power + brand + cat_car_age
              ,family = Gamma(link = 'log')
              ,data = claim_5000_dt)
 
-summary(model8)
+summary(model9)
 
 ggplot(claim_5000_dt) +
-    geom_line(aes(x = claim_amount, y = claim_amount), size = 0.25) +
-    geom_point(aes(x = claim_amount, y = exp(predict(model8)))) +
+    geom_line (aes(x = claim_amount, y = claim_amount), size = 0.25) +
+    geom_point(aes(x = claim_amount, y = predict(model9, type = 'response'))
+              ,size = 0.4, alpha = 0.2) +
     expand_limits(y = 0) +
     xlab("Claim Amount") +
     ylab("Predicted Amount")
 ```
 
 We still get a narrow range of predictions. We need to change our approach.
+
+## Regression from Computational Actuarial Science Textbook
+
+While unlikely to be much better, it is worth trying the regressions
+ran in the textbook. We have low expectations for quality but it is
+worth checking.
+
+We first look at the lognormal regression.
+
+```{r textbook_lognormal_claims, echo=TRUE}
+claim_15000_dt <- claimdata_dt %>%
+    filter(claim_amount < 15000)
+
+model10 <- lm(log(claim_amount) ~ cat_car_age + fuel, data = claim_15000_dt)
+
+summary(model10)
+
+ggplot(claim_15000_dt) +
+    geom_line(aes(x = claim_amount, y = claim_amount), size = 0.25) +
+    geom_point(aes(x = claim_amount, y = exp(predict(model10, type = 'response')))
+              ,size = 0.4, alpha = 0.2) +
+    expand_limits(y = 0) +
+    xlab("Claim Amount") +
+    ylab("Predicted Amount")
+```
+
+And we look at the Gamma regression.
+
+```{r textbook_gamma_claims, echo=TRUE}
+model11 <- glm(claim_amount ~ cat_car_age + fuel
+              ,family = Gamma(link = 'log')
+              ,data = claim_15000_dt)
+
+summary(model11)
+
+ggplot(claim_15000_dt) +
+    geom_line(aes(x = claim_amount, y = claim_amount), size = 0.25) +
+    geom_point(aes(x = claim_amount, y = predict(model11, type = 'response'))
+              ,size = 0.4, alpha = 0.2) +
+    expand_limits(y = 0) +
+    xlab("Claim Amount") +
+    ylab("Predicted Amount")
+```
+
+
 
 ## Estimating Claim Distributions
 
@@ -537,12 +603,60 @@ instead try to fit a distribution, partitioning the data by a few
 different categorical variables. Rather than predict a claim, we will
 randomly draw from the distribution. We can check this first.
 
-We first partition on `power` on `driver_age` and look at the
+We first partition on `car_age` and look at the
 distribution of the log of the claim amount.
 
-```{r claim_distrib_power_driverage, echo=TRUE}
+```{r claim_distrib_carage, echo=TRUE}
+ggplot(claim_5000_dt) +
+    geom_density(aes(x = claim_amount)) +
+    facet_grid(cat_car_age ~ fuel, scales = 'free') +
+    xlab("Log of the Claim Amount")
+
 ggplot(claim_5000_dt) +
     geom_density(aes(x = log10(claim_amount))) +
-    facet_wrap(~ cat_driver_age, scales = 'free') +
+    facet_grid(cat_car_age ~ fuel, scales = 'free') +
     xlab("Log of the Claim Amount")
 ```
+
+
+## Feature Selection using Boruta
+
+As one final attempt, we will try Boruta on the dataset. Boruta uses
+random forests against all the columns in the table and checks for
+predictive power.
+
+```{r claim_amount_boruta, echo=TRUE, cache=TRUE, message=FALSE}
+claimdata_boruta_dt <- claimdata_dt %>%
+    select(-contains("policy_id")
+          ,-contains("exposure")
+          ,-contains("total_claims"))
+
+claimdata_boruta <- Boruta(claim_amount ~ .
+                          ,data = claimdata_boruta_dt
+                          ,doTrace = 2, ntree = 100)
+
+print(claimdata_boruta$finalDecision)
+```
+
+We will try fitting one last Gamma distribution using the features
+from Boruta: `car_age`, `driver_age`, `brand`, `fuel`, `region`,
+`density`.
+
+```{r claim_boruta_glm, echo=TRUE, cache=TRUE, message=FALSE}
+model12 <- glm(claim_amount ~ car_age + driver_age + brand + fuel + region +
+                              density
+              ,family = Gamma(link = 'log')
+              ,data = claim_5000_dt)
+
+summary(model12)
+
+ggplot(claim_5000_dt) +
+    geom_line (aes(x = claim_amount, y = claim_amount), size = 0.25) +
+    geom_point(aes(x = predict(model12, type = 'response'), y = claim_amount)
+              ,size = 0.4, alpha = 0.2) +
+    expand_limits(y = 0) +
+    xlab("Predicted Amount") +
+    ylab("Claim Amount")
+```
+
+Once again, the model is quite a poor fit with a lot of unexplained variance.

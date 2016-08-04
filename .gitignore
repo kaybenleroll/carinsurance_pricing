@@ -4,6 +4,7 @@
 
 data/*.feather
 data/*.csv
+data/*.rds
 
 *_cache/*
 *_files/*

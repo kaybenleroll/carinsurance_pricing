@@ -1,0 +1,1298 @@
+
+---
+title: "GLMs for Car Insurance Pricing: Pricing"
+author: "Mick Cooney"
+date: "13 July 2016"
+output:
+  html_document:
+    toc: true
+    number_sections: true
+    fig_caption: yes
+    theme: cerulean
+    css: styles.css
+  pdf_document: default
+---
+
+<!--
+(Title:) GLMs for Car Insurance Pricing
+
+Author: Mick Cooney
+
+Date: 2016
+
+Abstract: This document is part of a series investigating the use of
+generalised linear models to price car insurance. This document uses
+work from the previous workbooks to start calculating price quotes for
+car insurance policies. We pursue more traditional methods for this,
+such as the use of hold-out data and explicitly removing data from the
+input data.
+
+
+Keywords: car-insurance pricing
+
+-->
+
+```{r knit_opts, include = FALSE}
+rm(list = ls())
+
+knitr::opts_chunk$set(tidy       = FALSE
+                     ,cache      = FALSE
+                     ,fig.height =  8
+                     ,fig.width  = 11
+                     )
+
+library(data.table)
+library(dtplyr)
+library(dplyr)
+library(ggplot2)
+library(scales)
+library(feather)
+library(poweRlaw)
+
+
+options(width            = 90)
+options(stringsAsFactors = FALSE)
+
+options(datatable.print.nrows      = 10L)
+options(datatable.prettyprint.char = 80L)
+
+source("custom_functions.R")
+```
+
+# Load Data and Set Parameters
+
+Before we begin we will configure some parameters.
+
+```{r config_params, echo=TRUE}
+set.seed(242)
+
+n_sim <- 100
+
+largeloss_threshold <- 5000
+```
+
+Once again, we load our data in from feather files and construct a
+dataset for the claims from the policy data.
+
+```{r load_data, echo=TRUE}
+policy_dt      <- read_feather("data/policy_data.feather")
+claim_dt       <- read_feather("data/claim_data.feather")
+policyclaim_dt <- read_feather("data/policyclaim_data.feather")
+
+setDT(policy_dt)
+setDT(claim_dt)
+setDT(policyclaim_dt)
+
+glimpse(policyclaim_dt)
+
+claimdata_dt <- policyclaim_dt %>%
+    select(-contains("claim_count"), contains("total_claims")) %>%
+    inner_join(claim_dt, by = 'policy_id')
+```
+
+We should look once again at a summary of the data, now with a view to
+excluding some as there were some unusual policies in the data and it
+may be best to just exclude these from our pricing model - at least
+for now.
+
+In particular, `driver_age` and `car_age` had values out in the tail
+for which it may be best to exclude these.
+
+```{r policy_summary, echo=TRUE}
+summary(policyclaim_dt)
+```
+
+```{r carage_driverage_density, echo=TRUE}
+ggplot(policyclaim_dt) +
+    geom_density(aes(x = driver_age))
+
+ggplot(policyclaim_dt) +
+    geom_density(aes(x = car_age))
+```
+
+For the purposes of discussion, how much data is lost were we to
+exclude drivers over the age of 75 and cars older than 20 years old?
+
+```{r data_filter, echo=TRUE}
+modeldata_dt <- policyclaim_dt %>%
+    filter(driver_age <= 75, car_age <= 20)
+
+glimpse(modeldata_dt)
+```
+
+Filtering for these values trims about 20,000 policies from the
+dataset, but we still have almost 400,000 policies to work with, so we
+will start here.
+
+## Split Data
+
+We first split the data with the standard train/test methodology, but
+with a slight shift in focus: we use our models to price the test set,
+and then check it against the claims we received.
+
+This leaves an open question for how we move on to simulating claims,
+but we tackle that issues later. First we need to focus on the data
+split.
+
+We want a reasonable size book of policies to price, and we choose a
+book of 100,000 policies in our 'test' set. The rest of the model data
+will be used for training and model building. We could use
+cross-validation to build these models, but we will not. Instead I
+will create a smaller 'validation' set from the training data so we
+can quickly look at different models.
+
+```{r data_split, echo=TRUE}
+testpolicies_dt <- modeldata_dt %>%
+    sample_n(size = 100000, replace = FALSE)
+
+train_dt <- modeldata_dt %>%
+    filter(!policy_id %in% testpolicies_dt$policy_id)
+
+glimpse(testpolicies_dt)
+glimpse(train_dt)
+
+validation_dt <- train_dt %>%
+    sample_n(size = 50000, replace = FALSE)
+
+trainpolicies_dt <- train_dt %>%
+    filter(!policy_id %in% validation_dt$policy_id)
+
+glimpse(trainpolicies_dt)
+glimpse(validation_dt)
+```
+
+We ignore the test set for the moment, focusing solely on the training
+data. As always, we will start with simple models and see how they do,
+then look to add more complexity to our modelling and model assessment
+when further iterating on the model.
+
+Also, we have avoided performing any kind of stratified sampling when
+splitting our data, which may prove to be an issue later. It is hoped
+that the use of aggregated categorical variables will help to mitigate
+this.
+
+We want to split out the claim size data here so that we model the
+claim size data in the same way.
+
+```{r claim_size_split, echo=TRUE}
+trainclaim_dt <- claimdata_dt %>%
+    filter(claim_amount <= largeloss_threshold) %>%
+    filter(policy_id %in% trainpolicies_dt$policy_id)
+
+validclaim_dt <- claimdata_dt %>%
+    filter(claim_amount <= largeloss_threshold) %>%
+    filter(policy_id %in% validation_dt$policy_id)
+
+testclaim_dt <- claimdata_dt %>%
+    filter(claim_amount <= largeloss_threshold) %>%
+    filter(policy_id %in% testpolicies_dt$policy_id)
+```
+
+Due to the very random nature of the claim sizes, the data split may
+not hugely relevant, but we may as well do it here now.
+
+
+# A First Pass at Pricing
+
+Our initial approach to pricing is to split the premium charged in
+two: we look to model expected, everyday losses using a combination of
+GLMs: a Poisson model for the claims rate and a Gamma distribution for
+the claim amount. The product of these two is the risk premium for
+expected, operational losses.
+
+We must also account for large tail losses. Modelling this using some
+power law distributions, we calculate an across-the-book charge for
+these events and see how we do on that. This second component is
+likely to be hard to properly estimate: it is likely a first pass will
+be to come with a rough heuristic for the amount to charge to cover
+infrequent but large losses.
+
+Finally, we are ignoring fraud in this model. Arguably one of the most
+important parts of the business, our data lacks any data on fraud so
+we are perhaps best avoiding it. Should we have data, we would add a
+third component to our price to account and compensate for fraud.
+
+## Modeling Per-Policy Claim Rates
+
+We return to the issue of modelling the claim rates. We will build our
+models with the training data, use simulation to assess the fit of the
+model with our training data, and then compare it to the validation
+set.
+
+We first try an 'intercept-only' model, one with no predictors at all.
+
+```{r count_model1, echo=TRUE}
+claim_model_01 <- glm(claim_count ~ 1
+                     ,offset = log(exposure)
+                     ,family = poisson
+                     ,data   = trainpolicies_dt)
+
+summary(claim_model_01)
+
+exp(coef(claim_model_01))
+```
+
+The overall claim rate for the training dataset is about 0.07 claims
+per policy per year, matching what we see in the data:
+
+```{r data_claimrate, echo=TRUE}
+trainpolicies_dt %>%
+    summarise(claim_rate = sum(claim_count) / sum(exposure))
+```
+
+We have a residual deviance of 62788 as well, and would expect that to
+drop as we add variables to the model. We also expect the AIC of 81360
+to drop.
+
+### Adding `cat_driver_age`
+
+Now we add `cat_driver_age` as we know this has an effect on claims.
+
+```{r count_model2, echo=TRUE}
+claim_model_02 <- glm(claim_count ~ cat_driver_age
+                     ,offset = log(exposure)
+                     ,family = poisson
+                     ,data   = trainpolicies_dt)
+
+summary(claim_model_02)
+```
+
+The residual deviance is now 62211, a fall of about 500. This is much
+smaller than the drop of 3 expected from adding a categorical variable
+with 4 values to the model, so our model is fitting the data better.
+
+A comparison of the AIC conirms this: now 80792 comparied to 81360.
+
+So far, so good. `cat_driver_age` is certainly worth including in the
+model.
+
+### Adding `fuel`
+
+We now add the `fuel` variable to the model.
+
+```{r count_model3, echo=TRUE}
+claim_model_03 <- glm(claim_count ~ cat_driver_age + fuel
+                     ,offset = log(exposure)
+                     ,family = poisson
+                     ,data   = trainpolicies_dt)
+
+summary(claim_model_03)
+```
+
+The residual deviance and AIC are now 62167 and 80749 respectively,
+once again improving the fit, though not as much as driver_age does.
+
+### Adding `cat_car_age`
+
+Car age may not have much effect, but it is worth trying, so we add
+`cat_car_age`.
+
+```{r count_model4, echo=TRUE}
+claim_model_04 <- glm(claim_count ~ cat_driver_age + fuel + cat_car_age
+                     ,offset = log(exposure)
+                     ,family = poisson
+                     ,data   = trainpolicies_dt)
+
+summary(claim_model_04)
+```
+
+Once again, small improvements with the residual deviance now 62147
+and AIC now 80735.
+
+Before we seek to add new parameters, we stop and see what model we
+have at the moment.
+
+Our baseline model is a policy with a driver between the ages of 17 to
+22, a car less than a year old running on a diesel engine.
+
+It is worth noting that all the coefficients we have fit for the model
+are negative, meaning that the baseline policy has the highest claim
+rate and other types of policies are less risky (a negative
+co-efficient reduces the incidence rate predicted by the model).
+
+We should look at this now before we continue, ensuring that what we
+are doing makes some kind of sense to our intuition. Our intuition
+could be misleading, but it is worth checking all the same.
+
+We create some fake policy data and then use the model to predict the
+claim rates.
+
+```{r create_predict_data, echo=TRUE}
+cda_vals <- unique(trainpolicies_dt$cat_driver_age)
+f_vals   <- unique(trainpolicies_dt$fuel)
+cca_vals <- unique(trainpolicies_dt$cat_car_age)
+
+newdata_1_dt <- CJ(cat_driver_age = cda_vals
+                  ,fuel           = f_vals
+                  ,cat_car_age    = cca_vals
+                  ,exposure       = 1
+                  )
+
+testdata_claimrates <- predict(claim_model_04
+                              ,newdata = newdata_1_dt
+                              ,type = 'response')
+
+newdata_1_dt[, claim_rate := testdata_claimrates]
+
+ggplot(newdata_1_dt) +
+    geom_point(aes(x = cat_driver_age, y = claim_rate, colour = fuel)) +
+    facet_wrap(~ cat_car_age) +
+    expand_limits(y = 0) +
+    ggtitle("Plot of the Predicted Claim Rates for Various Variable Combinations")
+```
+
+The plot illustrates a fact we had not commented on so far as the
+author had not noticed it: age has very little effect on the incidence
+rate of claims beyond the age of 26. This is confirmed from the model
+summary, the coefficient for `cat_driver_age` for the three levels
+from age 26 up are very close.
+
+In relative terms, young drivers pose a lot of risk: drivers between
+the ages of 17-22 have a claim rate that is between 3-4 times that of
+older drivers. If this model is in any way a reasonable representation
+of reality - something we yet to verify - it is little wonder young
+drivers pay so much for car insurance!
+
+### Adding `cat_density`
+
+The population density of a region could have an effect on claim
+incidence - if more people are around, the likelihood of an accident
+is higher as there are more drivers to crash into.
+
+Lacking any intuition for how density may affect the claim rate, we
+again use the categorical version we created `cat_density`.
+
+
+```{r count_model5, echo=TRUE}
+claim_model_05 <- glm(claim_count ~ cat_driver_age + fuel + cat_car_age +
+                                    cat_density
+                     ,offset = log(exposure)
+                     ,family = poisson
+                     ,data   = trainpolicies_dt)
+
+summary(claim_model_05)
+```
+
+This variable is useful too, the residual deviance and AIC have
+dropped to 61767 and 80363 respectively.
+
+Some careful inspection of the parameters also shows that the addition
+of a density variable changes the pattern previously observed: the
+coefficients of the model are no longer all negative, and we now have
+positive coefficients for levels of `cat_car_age`!
+
+This will happen when modelling non-independent variables in a dataset.
+
+Looking at the coefficients for `cat_density` we see that the larger
+population densities have a much larger claim rate, matching our
+intuition that living in areas with higher population density
+increases the chances of a claim.
+
+Again, we will create some fake data and calculate the claim rates
+according to our model and visualise the results.
+
+
+```{r create_predict_2_data, echo=TRUE}
+cda_vals <- unique(trainpolicies_dt$cat_driver_age)
+f_vals   <- unique(trainpolicies_dt$fuel)
+cca_vals <- unique(trainpolicies_dt$cat_car_age)
+d_vals   <- unique(trainpolicies_dt$cat_density)
+
+newdata_2_dt <- CJ(cat_driver_age = cda_vals
+                  ,fuel           = f_vals
+                  ,cat_car_age    = cca_vals
+                  ,cat_density    = d_vals
+                  ,exposure       = 1
+                  )
+
+testdata_claimrates <- predict(claim_model_05
+                              ,newdata = newdata_2_dt
+                              ,type = 'response')
+
+newdata_2_dt[, model_label := 'claim_model_05']
+newdata_2_dt[, claim_rate  := testdata_claimrates]
+
+ggplot(newdata_2_dt) +
+    geom_point(aes(x = cat_driver_age, y = claim_rate, colour = cat_density)) +
+    facet_grid(fuel ~ cat_car_age) +
+    expand_limits(y = 0) +
+    xlab("Driver Age") +
+    ylab("Claim Rate") +
+    ggtitle("Plot of the Predicted Claim Rates for Various Variable Combinations")
+```
+
+It is surprising to see the effect of the fuel-type of the car on the
+claim rate in this model. The incidence rate for a 17-22 year old in a
+densely populated area (`cat_density` = 4500-Inf) with a Diesel car is
+almost 0.3, as opposed to just under 0.25 for a Regular car. This may
+not sound like much, but the claim rate is 20% higher on a relative
+basis!
+
+This is a curious result, and is perhaps an indication of a problem
+with the model?
+
+We make a note of it for now and will return to the issue later.
+
+### Adding Interactions
+
+At this point we have added most of the categorical variables we
+believe to be relevant (we are not adding region for the moment, but
+may look to add this later).
+
+We currently do not look at the interaction of variables at all - each
+variable adds its own contribution to the estimation of the claim rate
+without regard to any other values, so it is worth adding some
+interactions and seeing if they have an effect.
+
+So which interactions should we add?
+
+A quick rule of thumb is that variables with large primary effects
+often have important interaction effects as well, so we first
+investigate the interaction of driver age and population density.
+
+```{r count_model6, echo=TRUE}
+claim_model_06 <- glm(claim_count ~ cat_driver_age + fuel + cat_car_age +
+                                    cat_density + cat_driver_age:cat_density
+                     ,offset = log(exposure)
+                     ,family = poisson
+                     ,data   = trainpolicies_dt)
+
+summary(claim_model_06)
+```
+
+A quick look at the various metrics for the model, not to mention the
+estimated coefficients themselves, reveals that little is added by
+this interaction so we drop it.
+
+What about the interaction of driver age and fuel type?
+
+```{r count_model7, echo=TRUE}
+claim_model_07 <- glm(claim_count ~ cat_driver_age + fuel + cat_car_age +
+                                    cat_density + cat_driver_age:fuel
+                     ,offset = log(exposure)
+                     ,family = poisson
+                     ,data   = trainpolicies_dt)
+
+summary(claim_model_07)
+```
+
+This call is marginal. We see a small improvement in residual deviance
+and the AIC stays about the same. We may drop this interaction in the
+future but we keep it for the moment.
+
+We also notice that car age is not having a big effect in the model,
+so what happens if we drop it?
+
+```{r count_model8, echo=TRUE}
+claim_model_08 <- glm(claim_count ~ cat_driver_age + fuel + cat_density +
+                                    cat_driver_age:fuel
+                     ,offset = log(exposure)
+                     ,family = poisson
+                     ,data   = trainpolicies_dt)
+
+summary(claim_model_08)
+```
+
+Once again we have a marginal call, but I would be inclined to keep
+car age in. In fact, we will add an interaction between it and driver
+age.
+
+```{r count_model9, echo=TRUE}
+claim_model_09 <- glm(claim_count ~ cat_driver_age + fuel + cat_car_age +
+                                    cat_density + cat_driver_age:fuel +
+                                    cat_driver_age:cat_car_age
+                     ,offset = log(exposure)
+                     ,family = poisson
+                     ,data   = trainpolicies_dt)
+
+summary(claim_model_09)
+```
+
+This model requires another judgement call. The residual deviance and
+AIC have reduced, and many of the coefficients have large effects but
+with large standard errors so that the coefficient is nearly always
+within one standard error.
+
+Going with the principle of parsimony (i.e. simple is best), we will
+remove this interaction.
+
+We have tried a bunch of potentially interesting interactions but the
+only one we are keeping is the interaction between driver age and fuel
+type in the car: `claim_model_07` is the model variable containing the
+fit.
+
+Before we move on, we repeat our previous visualisation of the outputs
+of the model we have built. We build table of data representing the
+different combinations of inputs and then look at the incidence rate.
+
+```{r create_predict_3_data, echo=TRUE}
+cda_vals <- unique(trainpolicies_dt$cat_driver_age)
+f_vals   <- unique(trainpolicies_dt$fuel)
+cca_vals <- unique(trainpolicies_dt$cat_car_age)
+d_vals   <- unique(trainpolicies_dt$cat_density)
+
+newdata_3_dt <- CJ(cat_driver_age = cda_vals
+                  ,fuel           = f_vals
+                  ,cat_car_age    = cca_vals
+                  ,cat_density    = d_vals
+                  ,exposure       = 1
+                  )
+
+testdata_claimrates <- predict(claim_model_07
+                              ,newdata = newdata_3_dt
+                              ,type = 'response')
+
+newdata_3_dt[, model_label := 'claim_model_07']
+newdata_3_dt[, claim_rate  := testdata_claimrates]
+
+ggplot(newdata_3_dt) +
+    geom_point(aes(x = cat_driver_age, y = claim_rate, colour = cat_density)) +
+    facet_grid(fuel ~ cat_car_age) +
+    expand_limits(y = 0) +
+    xlab("Driver Age") +
+    ylab("Claim Rate") +
+    ggtitle("Plot of the Predicted Claim Rates for Various Variable Combinations")
+```
+
+At a first glance, it appears that this model predicts a slightly
+lower claim rate than the previous one we used. To check this, we
+combine the two output data.tables and plot them at the same time.
+
+```{r predict_comparison_plot, echo=TRUE}
+ggplot(rbind(newdata_2_dt, newdata_3_dt)) +
+    geom_point(aes(x = cat_driver_age, y = claim_rate, colour = cat_density
+                  ,group = model_label, shape = model_label)
+              ,position = position_dodge(width = 0.5)) +
+    facet_grid(fuel ~ cat_car_age) +
+    expand_limits(y = 0) +
+    xlab("Driver Age") +
+    ylab("Claim Rate") +
+    ggtitle("Comparison Plot for Predicted Claim Rates for Candidate Models")
+```
+
+From this plot, we see that `claim_model_05` (without the interaction)
+gives slightly higher incidence rates for Diesel cars, but lower ones
+for Regular cars. This pattern is particularly pronounced for younger
+drivers.
+
+```{r remove_models, echo=FALSE}
+rm(claim_model_01)
+rm(claim_model_02)
+rm(claim_model_03)
+rm(claim_model_04)
+rm(claim_model_06)
+rm(claim_model_08)
+rm(claim_model_09)
+```
+
+
+# Assessing the Claim Rate Models
+
+We turn our attention to assessing the validity of our claim rate
+models. We also want our models to capture uncertainty as much as
+possible but for the moment that is secondary.
+
+A first approach to this is to use MonteCarlo simulation to generate
+counts of claims, and then compare the total claim count to those
+observed in the data set.
+
+One minor detail is that not all policies have equal exposure, and so
+we need to adjust the input to the Poisson process to account for
+this. As claim rates are based on time units of 1 year, this is a
+matter of multiplying the claim rate by the exposure.
+
+## Simulation Using Predicted Outputs
+
+We first focus our model validation within the training set. We ignore
+the uncertainty in the model output and use the predictions of the
+claim rate as they are.
+
+We will assess both `claim_model_05` and `claim_model_07` as our
+previous work showed little between them.
+
+First we simulate claim counts from `claim_model_05` and see how the
+distribution of simulated claims matches what we observed.
+
+```{r assess_simple_model_05, echo=TRUE, cache=TRUE}
+train_claimcount <- sum(trainpolicies_dt$claim_count)
+
+
+claim_rate <- predict(claim_model_05, newdata = trainpolicies_dt
+                     ,type = 'response')
+
+sim_rates <- claim_rate * trainpolicies_dt$exposure
+
+
+run_mc_sim <- function() {
+    sapply(sim_rates, function(iter_rate) rpois(1, iter_rate))
+}
+
+sim_claimcount_05 <- replicate(n_sim, sum(run_mc_sim()))
+```
+
+```{r assess_simple_model_05_plot, echo=TRUE}
+ggplot() +
+    geom_density(aes(x = sim_claimcount_05)) +
+    geom_vline(aes(xintercept = train_claimcount), colour = 'red') +
+    xlab("Count of Claims")
+```
+
+It appears our Poisson model is underesimating the claim rate
+significantly, and is also likely to have less variance than observed
+in reality.
+
+What about `claim_model_07`?
+
+```{r assess_simple_model_07, echo=TRUE, cache=TRUE}
+claim_rate <- predict(claim_model_07, newdata = trainpolicies_dt
+                     ,type = 'response')
+
+sim_rates <- claim_rate * trainpolicies_dt$exposure
+
+run_mc_sim <- function() {
+    sapply(sim_rates, function(iter_rate) rpois(1, iter_rate))
+}
+
+sim_claimcount_07 <- replicate(n_sim, sum(run_mc_sim()))
+```
+
+```{r assess_simple_model_07_plot, echo=TRUE}
+ggplot() +
+    geom_density(aes(x = sim_claimcount_07)) +
+    geom_vline(aes(xintercept = train_claimcount), colour = 'red')
+```
+
+We see similar results for this second model. We likely need a variant
+of the Poisson process to account for the greater dispersion observed
+in the data.
+
+Because it is fast to do and computationally cheap, we will check the
+validation set in a similar way. It is unlikely to be any better than
+the training set though and we will only run this for `claim_model_07`
+to save some time.
+
+
+```{r assess_simple_model_valid_07, echo=TRUE, cache=TRUE}
+valid_claimcount <- sum(validation_dt$claim_count)
+
+
+claim_rate <- predict(claim_model_07, newdata = validation_dt
+                     ,type = 'response')
+
+sim_rates <- claim_rate * validation_dt$exposure
+
+
+run_mc_sim <- function() {
+    sapply(sim_rates, function(iter_rate) rpois(1, iter_rate))
+}
+
+sim_claimcount_07 <- replicate(n_sim, sum(run_mc_sim()))
+```
+
+```{r assess_simple_model_valid_07_plot, echo=TRUE}
+ggplot() +
+    geom_density(aes(x = sim_claimcount_07)) +
+    geom_vline(aes(xintercept = valid_claimcount), colour = 'red') +
+    xlab("Count of Claims")
+```
+
+
+## Simulation Using Standard Errors for Parameters
+
+We now incorporate the standard errors estimated from the GLM. For
+each MonteCarlo simulation we take the additional step of sampling
+from the model coefficients. We use this sample of coefficients to
+calculate an individual claim rate for each policy and then draw from
+this. Due to the nature of the assumptions in the model, this should
+not affect the expectations for claims, but we expect that the
+variance in the simulations will increase.
+
+Performing these steps is a little more involved than before, but we
+can wrap this data in the creation of each MonteCarlo simulation.
+
+```{r assess_stderr_model_05, echo=TRUE, cache=TRUE}
+data_mat <- t(model.matrix(formula(claim_model_05), trainpolicies_dt))
+
+run_mc_sim <- function() {
+    model_coef <- as.vector(coef(arm::sim(claim_model_05, n.sim = 1)))
+
+    output <- as.vector(model_coef %*% data_mat)
+
+    sim_rates <- exp(output) * trainpolicies_dt$exposure
+
+    sapply(sim_rates, function(iter_rate) rpois(1, iter_rate))
+}
+
+sim_claimcount_stderr_05 <- replicate(n_sim, sum(run_mc_sim()))
+```
+
+```{r assess_stderr_model_05_plot, echo=TRUE}
+ggplot() +
+    geom_density(aes(x = sim_claimcount_stderr_05)) +
+    geom_vline(aes(xintercept = train_claimcount), colour = 'red') +
+    xlab("Count of Claims")
+```
+
+Adding the variation due to the standard error in the coefficient
+estimates seems to be doing a much better job! I am surprised by this,
+we might expect a wider distribution for the claims counts from the
+change we made, but at best it would manifest as the distribution of
+outcomes containing the observed count. In fact, this result is almost
+TOO good. It is such a huge improvement we are justified in being
+suspicious. We need to check our code for errors at this point.
+
+Before that, we check `claim_model_07` using the sampled output of the
+model and repeat the count simulations.
+
+```{r assess_stderr_model_07, echo=TRUE, cache=TRUE}
+data_mat <- t(model.matrix(formula(claim_model_07), trainpolicies_dt))
+
+run_mc_sim <- function() {
+    model_coef <- as.vector(coef(arm::sim(claim_model_07, n.sim = 1)))
+
+    output <- as.vector(model_coef %*% data_mat)
+
+    sim_rates <- exp(output) * trainpolicies_dt$exposure
+
+    sapply(sim_rates, function(iter_rate) rpois(1, iter_rate))
+}
+
+sim_claimcount_stderr_07 <- replicate(n_sim, sum(run_mc_sim()))
+```
+
+```{r assess_stderr_model_07_plot, echo=TRUE}
+ggplot() +
+    geom_density(aes(x = sim_claimcount_stderr_07)) +
+    geom_vline(aes(xintercept = train_claimcount), colour = 'red') +
+    xlab("Count of Claims")
+```
+
+### Simulating on the Validation Data
+
+We need to look at the output of this approach using the validation
+data. Once again we will look at both models, as this is likely to be
+a good test of the performance of the two datasets.
+
+Rather than run each model on the data separately we will run both and
+then plot the two outputs at the same time. It should make comparing
+the models easier and should work
+
+```{r assess_stderr_model_valid, echo=TRUE, cache=TRUE}
+data_mat <- t(model.matrix(formula(claim_model_05), validation_dt))
+
+run_mc_sim <- function() {
+    model_coef <- as.vector(coef(arm::sim(claim_model_05, n.sim = 1)))
+
+    output <- as.vector(model_coef %*% data_mat)
+
+    sim_rates <- exp(output) * validation_dt$exposure
+
+    sapply(sim_rates, function(iter_rate) rpois(1, iter_rate))
+}
+
+sim_claimcount_stderr_valid_05 <- replicate(n_sim, sum(run_mc_sim()))
+
+data_mat <- t(model.matrix(formula(claim_model_07), validation_dt))
+
+run_mc_sim <- function() {
+    model_coef <- as.vector(coef(arm::sim(claim_model_07, n.sim = 1)))
+
+    output <- as.vector(model_coef %*% data_mat)
+
+    sim_rates <- exp(output) * validation_dt$exposure
+
+    sapply(sim_rates, function(iter_rate) rpois(1, iter_rate))
+}
+
+sim_claimcount_stderr_valid_07 <- replicate(n_sim, sum(run_mc_sim()))
+```
+
+```{r assess_stderr_model_validation_plot, echo=TRUE}
+ggplot() +
+    stat_density(aes(x = sim_claimcount_stderr_valid_05)
+                ,geom = 'line', colour = 'green') +
+    stat_density(aes(x = sim_claimcount_stderr_valid_07)
+                ,geom = 'line', colour = 'blue') +
+    geom_vline(aes(xintercept = valid_claimcount), colour = 'red') +
+    expand_limits(y = 0) +
+    xlab("Count of Claims")
+```
+
+The above code involves a bit of copy-and-paste operations, especially
+for the creation of the function that calculates the value of the
+MonteCarlo iteration. It will be worth improving that and perhaps
+creating a more generic creator function to create those iteration
+calculations.
+
+Having looked at both, I am inclined to go with using `claim_model_07`
+as it was slightly better and is only adding a single interaction. I
+am violating the parsimony principle here, which may be a mistake, but
+I will go for it for now.
+
+
+# Estimating Claim Sizes
+
+As discussed previously, the size of the claim tends to be difficult
+to predict and is very noisy. That said, we are starting simple, so we
+fit a Gamma distribution and accept our predictions for claim amount
+may be on the low side. By taking expectations, our prices may be
+sound, we will have to check.
+
+```{r size_model_01, echo=TRUE}
+size_model_01 <- glm(claim_amount ~ 1
+                    ,family = Gamma(link = 'log')
+                    ,data   = trainclaim_dt)
+
+summary(size_model_01)
+```
+
+Having now fit the model, we should first check how our predictions
+compare. Much like the previous workbook, our expectations for model
+performance are very low.
+
+```{r size_model_01_verify, echo=TRUE}
+predict(size_model_01, type = 'response')[1]
+
+mean(trainclaim_dt$claim_amount)
+```
+
+With this 'intercept-only' model for the data, we are predict a claim
+of about EUR 1,100 for each claim which matches the average claim in
+the training dataset.
+
+
+## Adding `cat_driver_age`
+
+As driver age was a major predictor for claim rate it would make sense
+if it also affects the size of the claim, so we try that first. Once
+again, we compare this model to the intercept-only model.
+
+```{r size_model_02, echo=TRUE}
+size_model_02 <- glm(claim_amount ~ cat_driver_age
+                    ,family = Gamma(link = 'log')
+                    ,data   = trainclaim_dt)
+
+summary(size_model_02)
+```
+
+The residual deviance has reduced from 6077 to 6070, a few points
+larger than the 4 we would expect from adding a categorical with 5
+levels. The AIC improved marginally as well from 147945 to 147942.
+
+Just as a quick check, we plot the predicted against the observed.
+
+```{r size_model_02_verify, echo=TRUE}
+ggplot(trainclaim_dt) +
+    geom_line (aes(x = claim_amount, y = claim_amount), size = 0.25) +
+    geom_point(aes(x = predict(size_model_02, type = 'response')
+                  ,y = claim_amount), size = 0.4, alpha = 0.2) +
+    expand_limits(y = 0) +
+    xlab("Predicted Amount") +
+    ylab("Claim Amount")
+```
+
+## Adding `fuel`
+
+Next we look at `fuel` as this also had an effect on the claim rate.
+
+```{r size_model_03, echo = TRUE}
+size_model_03 <- glm(claim_amount ~ cat_driver_age + fuel
+                    ,family = Gamma(link = 'log')
+                    ,data   = trainclaim_dt)
+
+summary(size_model_03)
+```
+
+The improvements from `fuel` are very marginal, only slightly above
+random. For the moment we will keep it, but we may drop it.
+
+## Adding `cat_density`
+
+Density is a variable we can argue about for predicting claim size. It
+makes sense that it has a big effect on the rate of claims, but less
+obvious for the effect on claim size. We will try it and see.
+
+```{r size_model_04, echo=TRUE}
+size_model_04 <- glm(claim_amount ~ cat_driver_age + fuel + cat_density
+                    ,family = Gamma(link = 'log')
+                    ,data   = trainclaim_dt)
+
+summary(size_model_04)
+```
+
+Density does not seem to have much in the way of predictive power so
+we use the model containing `cat_driver_age` and `fuel`.
+
+We combine these two prediction models to price the risk from ordinary
+claims and losses.
+
+
+# Estimating Large Losses
+
+The final component of pricing is charging for the risk of large
+losses: losses larger than EUR 5,000. As we discussed in previous
+workbooks, we model this data as a power law.
+
+
+## Power-Law Distributions
+
+Informally, a *power law* is a functional relationship between two
+quantities where one quantity varies as a power of another. An example
+of a power law relation is the length of the side of a square to the
+area of the square: double the side length and the area increases by a
+factor of four.
+
+In notation terms, we have
+
+$$ f(x) = ax^{-k} $$
+
+where $k$ is the scaling factor.
+
+A *power law probability distribution* is a probability distribution
+whose density function is of the form
+
+$$ p(x) \propto L(x) x^{-\alpha} $$.
+
+where $\alpha > 1$, and is called the *scaling parameter* of the
+distribution. $L(x)$ has some restrictions on its form: it must
+be a *slowly-varying function* but we ignore these details.
+
+The scaling parameter is important in determining the properties of
+this distribution: some power-law distributions do not have finite
+moments, meaning that the mean and the variance of the distribution is
+undefined. The existence of moments depends on the scaling parameter
+so the first thing we do is estimate that first.
+
+
+### Estimating the Scaling Parameter
+
+We first need to estimate the scaling for the power law. For the
+moment, we will ignore the exposure variable as we should be able to
+incorporate this into the model. By ignoring this, we are
+underestimating the frequency for these losses: bad from a risk
+management perspective.
+
+We accept this error for now: we will account or this in the model
+assessment but it is important to flag it so we do not forget this as
+an issue. This point will also be important when trying to assess the
+effect of reinsurance on the portfolio.
+
+```{r powerlaw_scaling, echo=TRUE}
+logclaimsize_seq <- seq(0, 7, by = 0.1)
+
+powerlaw_dt <- data.table(
+    logsize = logclaimsize_seq
+   ,count   = sapply(logclaimsize_seq
+                    ,function(iter_m) nrow(claim_dt[claim_amount > 10^iter_m]))
+)
+
+power_fit_dt <- powerlaw_dt %>%
+    filter(logsize >= 3, count > 0) %>%
+    mutate(logcount = log(count))
+
+ggplot(power_fit_dt) +
+    geom_point(aes(x = logsize, y = logcount)) +
+    geom_smooth(aes(x = logsize, y = logcount), method = 'lm') +
+    xlab("Log of Claim Size") +
+    ylab("Log of Claim Counts")
+```
+
+The log-log plot implies that a power-law is at work here, so now we
+need to estimate the scaling of this power law which we do by
+estimating the slope of this line.
+
+```{r powerlaw_plot, echo=TRUE}
+powerlaw_lm <- lm(logcount ~ logsize, data = power_fit_dt)
+
+pl_scaling <- -coef(powerlaw_lm)[2]
+
+print(pl_scaling)
+```
+
+The scaling co-efficient for the power law of large losses is about 2.72.
+
+With this value, the power-law distribution has a finite mean: the
+mean of this distribution is both well-defined and will converge. We
+can use simulation and the law of large numbers to estimate its value.
+
+Unfortunately, for distributions with $2 < \alpha < 3$ even-powered
+moments do not exist, so variance is not defined. This suggests that
+trying to use the law of large numbers to estimate the variance
+results in a series that diverges as you increase the sample size. It
+is worth checking this happens when we try to simulate it.
+
+
+## Estimating Power-Law Losses
+
+With estimates of the scaling, we turn our attention to how to use
+this information to calculate a compensation charge for these large
+losses.
+
+Estimating the expected value of a power law distribution is not
+trivial, from a risk perspective in particular. The occurrence of
+outsized losses present significant tail risk.
+
+To compensate for assuming the risk of these large losses - losses we
+explictly choose to model as being entirely random and unpredictable -
+we need to calculate some kind of charge that we expect will cover
+their cost. We need to calculate the expectation of these large
+losses.
+
+To do this, we estimate this expectation by sampling from the
+distribution, calculating the average value and multiplying this by
+the probability of a large loss occurring. We then add this amount to
+every policy price.
+
+
+```{r estimate_powerlaw_expectation, echo=TRUE}
+N_expect <- 5000000
+
+sample_powerlaw <- poweRlaw::rpldis(N_expect
+                                   ,xmin = largeloss_threshold
+                                   ,alpha = pl_scaling)
+
+expect_loss <- mean(sample_powerlaw)
+
+print(expect_loss)
+```
+
+So the expected value of these large losses is just under EUR 12,000 -
+which is smaller than we expect but the distribution is so skewed that
+a lot of information is being lost be only stating the mean.
+
+We check this sequence converges as the sample size increases and that
+the variance diverges.
+
+```{r powerlaw_moment_check, echo=TRUE}
+top_exponent <- floor(log(N_expect))
+
+sample_size <- floor(exp(3:top_exponent))
+
+
+pl_moments <- sapply(sample_size, function(iter_n) {
+    iterdata <- sample_powerlaw[1:iter_n]
+
+    c(mean = mean(iterdata), sd = sd(iterdata))
+})
+
+plotdata_dt <- data.table(t(pl_moments))
+plotdata_dt[, sample_size := sample_size]
+
+ggplot(melt(plotdata_dt, id = 'sample_size')) +
+    geom_line(aes(x = sample_size, y = value)) +
+    facet_wrap(~variable, scales = 'free') +
+    xlab("Sample Size") +
+    ylab("Estimate") +
+    ggtitle("Scaling of Moment Estimation for Power-Law Distribution")
+```
+
+The estimate for the mean value of the distribution is converging on a
+value while the estimate for the standard deviation is diverging.
+
+Confident in our estimate of the mean, we use this as the estimate for
+large losses. To calculate the charge, we then need to multiply this
+by the probability of a large loss occurring to calculate the charge
+we add to all policies.
+
+```{r powerlaw_charge_calculation, echo=TRUE}
+n_largeloss <- claim_dt %>%
+    filter(claim_amount >= largeloss_threshold) %>%
+    nrow
+
+n_policies <- policy_dt %>% nrow
+
+largeloss_charge <- expect_loss * n_largeloss / n_policies
+
+print(largeloss_charge)
+```
+
+So we add just under EUR 20 to the premium price for each policy as an
+attempt to cover off the large losses. This is something we certainly
+will have to deal with more thoroughly.
+
+
+# Calculating a Premium Price
+
+We now have all the pieces we need to price the car insurance we
+have. We use the Poisson regression to estimate the claim rate for the
+policy, the Gamma distribution to estimate the size of the claim,
+multiplying these two values together to get a price due to the
+premium.
+
+Once we have this, we add the large-loss charge to this to get a final
+estimate of the 'risk premium' - the premium that compensates us for
+the risk we are taking on.
+
+To calculate a quote, we need to charge more for this - partly to
+cover expenses of running the business: wages, fees, compliance etc,
+and also to build in a profit margin - an insurance company is not a
+charity, so we need to charge a price higher than the risk price to
+earn a profit!
+
+Operating costs for an insurance company tend to go between 20-30% of
+the premium, so we split the difference, we assume an expense ratio of
+25%. We need to increase the premium by 25% to cover expenses. We also
+build in a profit margin of 10%, so our overall quoted premium will be
+1.35 times the risk premium we calculate.
+
+
+## Calculating the Risk Premium
+
+As we require a few components to calculate the risk premium, it will
+be convenient to wrap the logic into a function that takes policies as
+an input and returns premium quotes.
+
+We can use the functional aspect of R to wrap this creation of the
+function as the output of another function: we are writing a function
+that gives another function as output.
+
+For the moment we will stick with the simple `claim_model_07` model
+for estimating claim rates: we will introduce methods for dealing with
+the uncertainty later, but it is better to start with something simple
+and wrong then lose ourselves in the coding of something more
+complex. We can worry about standard errors in our coefficients and
+the impact on pricing later.
+
+
+```{r create_pricing_function, echo=TRUE}
+create_pricing_function <- function(claimrate_model_glm
+                                   ,claimsize_model_glm
+                                   ,largeloss_charge
+                                   ,quote_ratio) {
+
+    price_function <- function(policydata_dt) {
+        claim_rates <- predict(claimrate_model_glm
+                              ,newdata = policydata_dt
+                              ,type = 'response')
+
+        claim_sizes <- predict(claimsize_model_glm
+                              ,newdata = policydata_dt
+                              ,type = 'response')
+
+        risk_premium <- claim_rates * claim_sizes
+
+        price_quote <- risk_premium * (1 + quote_ratio)
+
+        return(data.table(price_quote = price_quote, risk_premium = risk_premium))
+    }
+
+    return(price_function)
+}
+
+premium_quoter <- create_pricing_function(claimrate_model_glm = claim_model_07
+                                         ,claimsize_model_glm = size_model_03
+                                         ,largeloss_charge    = largeloss_charge
+                                         ,quote_ratio         = 0.35)
+```
+
+Having built the function to calculate the quotes, we now do so for
+the training dataset.
+
+```{r calc_train_quotes, echo=TRUE}
+trainquotes_dt <- premium_quoter(trainpolicies_dt)
+
+trainpolicies_dt <- trainpolicies_dt %>%
+    cbind(trainquotes_dt)
+
+summary(trainpolicies_dt$price_quote)
+```
+
+```{r calc_train_quotes_plot, echo=TRUE}
+ggplot(trainpolicies_dt) +
+    geom_histogram(aes(x = price_quote), binwidth = 10) +
+    ggtitle("Histogram of the Calculated Price Quotes for the Training Dataset")
+```
+
+Anyone used to paying car insurance is likely to immediately suspect
+something. The prices quotes seem low, ranging from a few cents up to
+a few hundred euro. It is possible this is an old dataset so the data
+is set for a different macroeconomic price level.
+
+It is also possible there is a problem with the model, but the
+incidence rates from the Poisson model seem reasonable, and the
+average claim levels we calculated are consisten with the data, so the
+model is merely reflecting the input.
+
+We note that the use of the non-sampled model did strongly
+underestimate the incidence rate, but only by a factor of
+25-40%. Bumping the premium by this amount will not correct this.
+
+Once quick sanity check is to look at the total premium collected on
+the training set and compare that to the total claims for those
+policies. We would hope the claims are lower than the total premium
+paid - though this is no guarantee.
+
+```{r pricing_check_train, echo=TRUE}
+total_train_premium <- sum(trainpolicies_dt$price_quote)
+total_train_claims  <- sum(trainclaim_dt$claim_amount)
+
+print(c(dollar(total_train_premium)
+       ,dollar(total_train_claims)
+       ,dollar(total_train_premium - total_train_claims)))
+```
+
+So from what we have seen, we have taken in about 40% more in premium
+than we paid out in claims, close to the 35% extra premium we built
+into our pricing. This is consistent with what we attempted to do at least.
+
+What about the validation set? Does the pricing make a profit for that
+set of policies. We will check that now.
+
+
+```{r pricing_check_validation, echo=TRUE}
+validquotes_dt <- premium_quoter(validation_dt)
+
+validation_dt <- validation_dt %>%
+    cbind(validquotes_dt)
+
+summary(validation_dt$price_quote)
+```
+
+```{r pricing_check_validation_plot, echo=TRUE}
+ggplot(validation_dt) +
+    geom_histogram(aes(x = price_quote), binwidth = 10) +
+    ggtitle("Histogram of the Calculated Price Quotes for the Validation Dataset")
+
+total_valid_premium <- sum(validation_dt$price_quote)
+total_valid_claims  <- sum(validclaim_dt$claim_amount)
+
+print(c(dollar(total_valid_premium)
+       ,dollar(total_valid_claims)
+       ,dollar(total_valid_premium - total_valid_claims)))
+```
+
+The validation set has a total premium of about 45% of the premium
+collected - again matching what we would expect.
+
+We have an initial pricing model, and have performed some very simple
+heuristic checks to ensure that we have priced it appropriately for
+the risk being assumed. Checking this more thoroughly is the next step
+we need to take.
+
+
+# Write Data
+
+We perform the model checks and validation in another document, so
+need to save our work. We also save our train/validation/test splits.
+
+Unfortunately, the `feather` package is not suitable for saving
+models. It is aimed at tabular data rather than fitted objects. To
+save these models we will fall back on R's inbuilt object saving code
+so that we do not have to load them later.
+
+```{r write_data, echo=TRUE}
+### First save the data split
+write.csv(trainpolicies_dt, file = 'data/train_data.csv', row.names = FALSE)
+write.csv(validation_dt,    file = 'data/valid_data.csv', row.names = FALSE)
+write.csv(testpolicies_dt,  file = 'data/test_data.csv',  row.names = FALSE)
+
+write_feather(trainpolicies_dt, path = 'data/train_data.feather')
+write_feather(validation_dt,    path = 'data/valid_data.feather')
+write_feather(testpolicies_dt,  path = 'data/test_data.feather')
+
+
+### Save the models
+saveRDS(claim_model_07, file = 'data/claim_model.rds',    compress = 'xz')
+saveRDS(size_model_03,  file = 'data/size_model.rds',     compress = 'xz')
+saveRDS(premium_quoter, file = 'data/premium_quoter.rds', compress = 'xz')
+```

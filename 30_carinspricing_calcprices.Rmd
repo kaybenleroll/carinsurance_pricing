@@ -59,7 +59,7 @@ options(datatable.prettyprint.char = 80L)
 source("custom_functions.R")
 ```
 
-# Load Data and Set Parameters
+# Set Parameters and Load Data
 
 Before we begin we will configure some parameters.
 
@@ -151,14 +151,14 @@ train_dt <- modeldata_dt %>%
 glimpse(testpolicies_dt)
 glimpse(train_dt)
 
-validation_dt <- train_dt %>%
+validpolicy_dt <- train_dt %>%
     sample_n(size = 50000, replace = FALSE)
 
 trainpolicies_dt <- train_dt %>%
-    filter(!policy_id %in% validation_dt$policy_id)
+    filter(!policy_id %in% validpolicy_dt$policy_id)
 
 glimpse(trainpolicies_dt)
-glimpse(validation_dt)
+glimpse(validpolicy_dt)
 ```
 
 We ignore the test set for the moment, focusing solely on the training
@@ -181,7 +181,7 @@ trainclaim_dt <- claimdata_dt %>%
 
 validclaim_dt <- claimdata_dt %>%
     filter(claim_amount <= largeloss_threshold) %>%
-    filter(policy_id %in% validation_dt$policy_id)
+    filter(policy_id %in% validpolicy_dt$policy_id)
 
 testclaim_dt <- claimdata_dt %>%
     filter(claim_amount <= largeloss_threshold) %>%
@@ -673,13 +673,13 @@ to save some time.
 
 
 ```{r assess_simple_model_valid_07, echo=TRUE, cache=TRUE}
-valid_claimcount <- sum(validation_dt$claim_count)
+valid_claimcount <- sum(validpolicy_dt$claim_count)
 
 
-claim_rate <- predict(claim_model_07, newdata = validation_dt
+claim_rate <- predict(claim_model_07, newdata = validpolicy_dt
                      ,type = 'response')
 
-sim_rates <- claim_rate * validation_dt$exposure
+sim_rates <- claim_rate * validpolicy_dt$exposure
 
 
 run_mc_sim <- function() {
@@ -778,28 +778,28 @@ then plot the two outputs at the same time. It should make comparing
 the models easier and should work
 
 ```{r assess_stderr_model_valid, echo=TRUE, cache=TRUE}
-data_mat <- t(model.matrix(formula(claim_model_05), validation_dt))
+data_mat <- t(model.matrix(formula(claim_model_05), validpolicy_dt))
 
 run_mc_sim <- function() {
     model_coef <- as.vector(coef(arm::sim(claim_model_05, n.sim = 1)))
 
     output <- as.vector(model_coef %*% data_mat)
 
-    sim_rates <- exp(output) * validation_dt$exposure
+    sim_rates <- exp(output) * validpolicy_dt$exposure
 
     sapply(sim_rates, function(iter_rate) rpois(1, iter_rate))
 }
 
 sim_claimcount_stderr_valid_05 <- replicate(n_sim, sum(run_mc_sim()))
 
-data_mat <- t(model.matrix(formula(claim_model_07), validation_dt))
+data_mat <- t(model.matrix(formula(claim_model_07), validpolicy_dt))
 
 run_mc_sim <- function() {
     model_coef <- as.vector(coef(arm::sim(claim_model_07, n.sim = 1)))
 
     output <- as.vector(model_coef %*% data_mat)
 
-    sim_rates <- exp(output) * validation_dt$exposure
+    sim_rates <- exp(output) * validpolicy_dt$exposure
 
     sapply(sim_rates, function(iter_rate) rpois(1, iter_rate))
 }
@@ -1240,20 +1240,20 @@ set of policies. We will check that now.
 
 
 ```{r pricing_check_validation, echo=TRUE}
-validquotes_dt <- premium_quoter(validation_dt)
+validquotes_dt <- premium_quoter(validpolicy_dt)
 
-validation_dt <- validation_dt %>%
+validpolicy_dt <- validpolicy_dt %>%
     cbind(validquotes_dt)
 
-summary(validation_dt$price_quote)
+summary(validpolicy_dt$price_quote)
 ```
 
 ```{r pricing_check_validation_plot, echo=TRUE}
-ggplot(validation_dt) +
+ggplot(validpolicy_dt) +
     geom_histogram(aes(x = price_quote), binwidth = 10) +
     ggtitle("Histogram of the Calculated Price Quotes for the Validation Dataset")
 
-total_valid_premium <- sum(validation_dt$price_quote)
+total_valid_premium <- sum(validpolicy_dt$price_quote)
 total_valid_claims  <- sum(validclaim_dt$claim_amount)
 
 print(c(dollar(total_valid_premium)
@@ -1283,11 +1283,11 @@ so that we do not have to load them later.
 ```{r write_data, echo=TRUE}
 ### First save the data split
 write.csv(trainpolicies_dt, file = 'data/train_data.csv', row.names = FALSE)
-write.csv(validation_dt,    file = 'data/valid_data.csv', row.names = FALSE)
+write.csv(validpolicy_dt,   file = 'data/valid_data.csv', row.names = FALSE)
 write.csv(testpolicies_dt,  file = 'data/test_data.csv',  row.names = FALSE)
 
 write_feather(trainpolicies_dt, path = 'data/train_data.feather')
-write_feather(validation_dt,    path = 'data/valid_data.feather')
+write_feather(validpolicy_dt,   path = 'data/valid_data.feather')
 write_feather(testpolicies_dt,  path = 'data/test_data.feather')
 
 

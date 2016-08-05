@@ -1,0 +1,150 @@
+
+---
+title: "GLMs for Car Insurance Pricing: Model Assessment"
+author: "Mick Cooney"
+date: "13 July 2016"
+output:
+  html_document:
+    toc: true
+    number_sections: true
+    fig_caption: yes
+    theme: cerulean
+    css: styles.css
+  pdf_document: default
+---
+
+<!--
+(Title:) GLMs for Car Insurance Pricing
+
+Author: Mick Cooney
+
+Date: 2016
+
+Abstract: This document is part of a series investigating the use of
+generalised linear models to price car insurance. This document
+assesses the pricing models built previously and uses MonteCarlo
+simulation to discover the range of possible outcomes that are
+possible assuming we get the data correct. The main focus is to get
+assess the distribution of possible outcomes.
+
+Keywords: car-insurance pricing assessment
+
+-->
+
+```{r knit_opts, include = FALSE}
+rm(list = ls())
+
+knitr::opts_chunk$set(tidy       = FALSE
+                     ,cache      = FALSE
+                     ,fig.height =  8
+                     ,fig.width  = 11
+                     )
+
+library(data.table)
+library(dtplyr)
+library(dplyr)
+library(ggplot2)
+library(scales)
+library(feather)
+library(poweRlaw)
+
+
+options(width            = 90)
+options(stringsAsFactors = FALSE)
+
+options(datatable.print.nrows      = 10L)
+options(datatable.prettyprint.char = 80L)
+
+source("custom_functions.R")
+```
+
+# Set Parameters and Load Data
+
+Before we begin we configure some parameters needed for the
+simulations.
+
+```{r config_params, echo=TRUE}
+set.seed(242)
+
+n_sim <- 100
+
+largeloss_threshold <- 5000
+```
+
+We load the various datasets, the model fits and the price calculation.
+
+```{r load_data, echo=TRUE}
+trainpolicy_dt <- read_feather("data/train_data.feather")
+validpolicy_dt <- read_feather("data/valid_data.feather")
+testpolicy_dt  <- read_feather("data/test_data.feather")
+
+
+setDT(trainpolicy_dt)
+setDT(validpolicy_dt)
+setDT(testpolicy_dt)
+
+glimpse(trainpolicy_dt)
+glimpse(validpolicy_dt)
+glimpse(testpolicy_dt)
+
+claimrate_model_glm <- readRDS("data/claim_model.rds")
+claimsize_model_glm <- readRDS("data/size_model.rds")
+
+premium_quoter <- readRDS("data/premium_quoter.rds")
+```
+
+In this document we focus assessing our pricing model. No model is
+perfect, and it is important to understand how a pricing model may
+fail and what risks are posed.
+
+To start with, we make a very strong and generous assumption: we
+assume our pricing model is correct and the risks assumed by the
+business are represented correctly by the models.
+
+This assumption is absurd, we already know the model has flaws, and
+spent part of the last document working on them. That said, it makes
+for a easy and frictionless starting point, and should help illustrate
+the extent of tail risk we have in the model.
+
+# Evaluating the Model with Same Parameters
+
+The idea is to use the same parameters used to price the policies to
+simulate claim data. For each simulation iteration and policy, we
+perform a number of steps:
+
+* Use the Poisson model to estimate claim counts for the policy
+* Use the Gamma model to estimate the size of the claims
+* Use the largeloss claim frequency to estimate the count of large claims
+* Use the powerlaw calculation to simulate the size of the large claims
+
+Note that for performance reasons the logical steps outlined above may
+be implemented differently without changing the outcome of the
+simulation overall.
+
+Having done the above for every policy and claim, we run multiple
+MonteCarlo simulations to estimate the distribution of possible
+outcomes *conditional on the model being correct*.
+
+This approach may seem pointless - using a model to validate itself -
+but it is not. It gives us a sense of the best case scenario from a
+probabilistic perspective.
+
+
+```{r model_assess_simple, echo=TRUE}
+
+create_mc_simulator <- function(claimrate_model_glm
+                               ,claimsize_model_glm
+                               ,largeloss_sf
+                               ,policydata_dt) {
+
+    claim_rate <- predict(claimrate_model_glm, newdata = policydata_dt, type = 'response')
+
+    run_mc_sim <- function() {
+        return(1)
+    }
+
+    return(run_mc_sim)
+}
+
+
+```

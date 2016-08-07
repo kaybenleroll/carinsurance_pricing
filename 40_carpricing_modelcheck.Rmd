@@ -69,11 +69,16 @@ set.seed(242)
 n_sim <- 100
 
 largeloss_threshold <- 5000
+largeloss_sf        <- 2.72
+largeloss_rate      <- 0.001588
 ```
 
 We load the various datasets, the model fits and the price calculation.
 
 ```{r load_data, echo=TRUE}
+policy_dt <- read_feather("data/policy_data.feather")
+claim_dt  <- read_feather("data/claim_data.feather")
+
 trainpolicy_dt <- read_feather("data/train_data.feather")
 validpolicy_dt <- read_feather("data/valid_data.feather")
 testpolicy_dt  <- read_feather("data/test_data.feather")
@@ -114,8 +119,10 @@ perform a number of steps:
 
 * Use the Poisson model to estimate claim counts for the policy
 * Use the Gamma model to estimate the size of the claims
-* Use the largeloss claim frequency to estimate the count of large claims
-* Use the powerlaw calculation to simulate the size of the large claims
+* Use the large loss claim frequency to estimate the count of large
+  claims
+* Use the power law calculation to simulate the size of the large
+  claims
 
 Note that for performance reasons the logical steps outlined above may
 be implemented differently without changing the outcome of the
@@ -130,21 +137,129 @@ but it is not. It gives us a sense of the best case scenario from a
 probabilistic perspective.
 
 
+## Converting GLM Output to Distribution Parameters
+
+To calculate simulations we require, we need to convert the output of
+GLM regressions to parameters for the underlying distributions. GLMs
+fit the data to produce the mean and dispersion of the data - perfect
+for the use of a normal distribution as it is parameterised by the
+mean and variance - but other distributions use different parameters.
+
+The Poisson distribution has a single parameter, the mean, so we can
+use that output directly if we wish to simulate from a Poisson.
+
+The Gamma distribution has a few choices for parameterisation, the
+most common of which is to use the shape, $k$ and the rate,
+$\beta$. The shape is the reciprocal of the dispersion in the dataset,
+and the rate is given by
+
+$$ \beta = \frac{k}{\mu}. $$
+
+With these transformations we can use the model fits to produce data
+in our simulations.
+
+
 ```{r model_assess_simple, echo=TRUE}
 
-create_mc_simulator <- function(claimrate_model_glm
-                               ,claimsize_model_glm
-                               ,largeloss_sf
-                               ,policydata_dt) {
+create_assessment_simulator <- function(claimrate_model_glm
+                                       ,claimsize_model_glm
+                                       ,largeloss_threshold
+                                       ,largeloss_rate
+                                       ,largeloss_sf) {
 
-    claim_rate <- predict(claimrate_model_glm, newdata = policydata_dt, type = 'response')
+    assessment_simulator <- function(policydata_dt) {
+        n_policies <- nrow(policydata_dt)
 
-    run_mc_sim <- function() {
-        return(1)
+        claim_rate <- predict(claimrate_model_glm
+                             ,newdata = policydata_dt
+                             ,type = 'response')
+
+        claim_size <- predict(claimsize_model_glm
+                             ,newdata = policydata_dt
+                             ,type = 'response')
+
+        claim_gamma_shape <- MASS::gamma.shape(claimsize_model_glm)$alpha
+        claim_gamma_rate  <- claim_gamma_shape / claim_size
+
+        mc_iteration <- function() {
+
+            ### simulating ordinary claims
+            claim_count <- sapply(claim_rate, function(x) rpois(1, x))
+
+            claim_total <- mapply(function(count, shape, rate) {
+                if(count == 0) {
+                    total_claims <- 0
+                } else {
+                    claim_amount <- rgamma(count
+                                          ,shape = claim_gamma_shape
+                                          ,rate = claim_gamma_rate)
+
+                    total_claims <- sum(claim_amount)
+                }
+
+                return(total_claims)
+            }, claim_count, claim_gamma_shape, claim_gamma_rate)
+
+            largeloss_count <- rpois(n_policies, largeloss_rate)
+
+            largeloss_amount <- rpldis(sum(largeloss_count)
+                                      ,xmin = largeloss_threshold
+                                      ,alpha = largeloss_sf)
+
+            return(sum(claim_total) + sum(largeloss_amount))
+        }
+
+        return(mc_iteration)
     }
 
-    return(run_mc_sim)
+    return(assessment_simulator)
 }
 
+simulator_creator <- create_assessment_simulator(claimrate_model_glm
+                                                ,claimsize_model_glm
+                                                ,largeloss_threshold
+                                                ,largeloss_rate
+                                                ,largeloss_sf)
+```
 
+With this infrastructure in place we are now in position to assess the
+model using the training dataset.
+
+```{r assess_training_data, echo=TRUE, cache=TRUE}
+use_dt <- trainpolicy_dt
+
+run_mc_train_sim <- simulator_creator(use_dt)
+
+sim_train_losses <- replicate(n_sim, run_mc_train_sim())
+
+total_riskprem   <- sum(use_dt$risk_premium)
+received_premium <- sum(use_dt$price_quote)
+```
+
+```{r assess_training_data_plot, echo=TRUE}
+ggplot() +
+    stat_density(aes(x = sim_train_losses), geom = 'line') +
+    geom_vline(aes(xintercept = received_premium), colour = 'red') +
+    geom_vline(aes(xintercept = total_riskprem), colour = 'blue') +
+    scale_x_continuous(label = dollar)
+```
+
+
+```{r assess_validation_data, echo=TRUE, cache=TRUE}
+use_dt <- validpolicy_dt
+
+run_mc_valid_sim <- simulator_creator(use_dt)
+
+sim_valid_losses <- replicate(n_sim, run_mc_valid_sim())
+
+total_riskprem   <- sum(use_dt$risk_premium)
+received_premium <- sum(use_dt$price_quote)
+```
+
+```{r assess_validation_data_plot, echo=TRUE}
+ggplot() +
+    stat_density(aes(x = sim_valid_losses), geom = 'line') +
+    geom_vline(aes(xintercept = received_premium), colour = 'red') +
+    geom_vline(aes(xintercept = total_riskprem), colour = 'blue') +
+    scale_x_continuous(label = dollar)
 ```

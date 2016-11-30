@@ -40,11 +40,11 @@ knitr::opts_chunk$set(tidy       = FALSE
                      ,fig.width  = 11
                      )
 
+library(tidyverse)
 library(data.table)
 library(dtplyr)
-library(dplyr)
+
 library(ggplot2)
-library(scales)
 library(feather)
 library(poweRlaw)
 
@@ -205,7 +205,7 @@ ggplot() +
     stat_density(aes(x = sim_train_losses['total_claims',]), geom = 'line') +
     geom_vline(aes(xintercept = received_premium), colour = 'red') +
     geom_vline(aes(xintercept = total_riskprem),   colour = 'blue') +
-    scale_x_continuous(label = dollar)
+    scale_x_continuous(label = scales::dollar)
 ```
 
 This looks poor, much worse than we would anticipate given that we are
@@ -235,7 +235,7 @@ ggplot() +
     stat_density(aes(x = sim_train_fixedclaim_losses['total_claims',]), geom = 'line') +
     geom_vline(aes(xintercept = received_premium), colour = 'red') +
     geom_vline(aes(xintercept = total_riskprem),   colour = 'blue') +
-    scale_x_continuous(label = dollar)
+    scale_x_continuous(label = scales::dollar)
 ```
 
 
@@ -256,5 +256,5 @@ ggplot() +
     stat_density(aes(x = sim_valid_losses['total_claims',]), geom = 'line') +
     geom_vline(aes(xintercept = received_premium), colour = 'red') +
     geom_vline(aes(xintercept = total_riskprem),   colour = 'blue') +
-    scale_x_continuous(label = dollar)
+    scale_x_continuous(label = scales::dollar)
 ```

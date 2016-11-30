@@ -217,7 +217,7 @@ glimpse(policyclaim_dt)</code></pre>
 ## $ agg_power_2    &lt;chr&gt; &quot;g&quot;, &quot;g&quot;, &quot;f&quot;, &quot;f&quot;, &quot;g&quot;, &quot;g&quot;, &quot;d&quot;, &quot;d&quot;, &quot;d&quot;, &quot;i&quot;, &quot;f&quot;, &quot;f&quot;, &quot;e...
 ## $ agg_region     &lt;chr&gt; &quot;R72&quot;, &quot;R72&quot;, &quot;R31&quot;, &quot;R31&quot;, &quot;R52&quot;, &quot;R52&quot;, &quot;R72&quot;, &quot;R72&quot;, &quot;R31&quot;,...</code></pre>
 <pre class="r"><code>claimdata_dt &lt;- policyclaim_dt %&gt;%
-    select(-contains(&quot;claim_count&quot;), contains(&quot;total_claims&quot;)) %&gt;%
+    select(-c(claim_count, total_claims)) %&gt;%
     inner_join(claim_dt, by = 'policy_id')</code></pre>
 <p>We should look once again at a summary of the data, now with a view to excluding some as there were some unusual policies in the data and it may be best to just exclude these from our pricing model - at least for now.</p>
 <p>In particular, <code>driver_age</code> and <code>car_age</code> had values out in the tail for which it may be best to exclude these.</p>
@@ -1409,9 +1409,9 @@ summary(trainpolicies_dt$price_quote)</code></pre>
 <pre class="r"><code>total_train_premium &lt;- sum(trainpolicies_dt$price_quote)
 total_train_claims  &lt;- sum(trainclaim_dt$claim_amount)
 
-print(c(dollar(total_train_premium)
-       ,dollar(total_train_claims)
-       ,dollar(total_train_premium - total_train_claims)))</code></pre>
+print(c(scales::dollar(total_train_premium)
+       ,scales::dollar(total_train_claims)
+       ,scales::dollar(total_train_premium - total_train_claims)))</code></pre>
 <pre><code>## [1] &quot;$14,893,884&quot; &quot;$10,570,568&quot; &quot;$4,323,316&quot;</code></pre>
 <p>So from what we have seen, we have taken in about 40% more in premium than we paid out in claims, close to the 35% extra premium we built into our pricing. This is consistent with what we attempted to do at least.</p>
 <p>What about the validation set? Does the pricing make a profit for that set of policies. We will check that now.</p>
@@ -1430,9 +1430,9 @@ summary(validpolicy_dt$price_quote)</code></pre>
 <pre class="r"><code>total_valid_premium &lt;- sum(validpolicy_dt$price_quote)
 total_valid_claims  &lt;- sum(validclaim_dt$claim_amount)
 
-print(c(dollar(total_valid_premium)
-       ,dollar(total_valid_claims)
-       ,dollar(total_valid_premium - total_valid_claims)))</code></pre>
+print(c(scales::dollar(total_valid_premium)
+       ,scales::dollar(total_valid_claims)
+       ,scales::dollar(total_valid_premium - total_valid_claims)))</code></pre>
 <pre><code>## [1] &quot;$3,044,754&quot; &quot;$2,097,229&quot; &quot;$947,525&quot;</code></pre>
 <p>The validation set has a total premium of about 45% of the premium collected - again matching what we would expect.</p>
 <p>We have an initial pricing model, and have performed some very simple heuristic checks to ensure that we have priced it appropriately for the risk being assumed. Checking this more thoroughly is the next step we need to take.</p>

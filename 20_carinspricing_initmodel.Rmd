@@ -40,12 +40,14 @@ knitr::opts_chunk$set(tidy       = FALSE
                      ,fig.width  = 11
                      )
 
+library(tidyverse)
 library(data.table)
 library(dtplyr)
-library(dplyr)
+
 library(ggplot2)
-library(scales)
 library(feather)
+library(Boruta)
+
 
 options(width            = 90)
 options(stringsAsFactors = FALSE)
@@ -377,7 +379,7 @@ claims above EUR 25,000 so we exclude these data now.
 
 ```{r claim_data, echo=TRUE}
 claimdata_dt <- policyclaim_dt %>%
-    select(-contains("claim_count"), contains("total_claims")) %>%
+    select(-c(claim_count)) %>%
     inner_join(claim_dt, by = 'policy_id') %>%
     filter(claim_amount < 25000)
 
@@ -504,7 +506,7 @@ To try this, we should look at a plot of the current distribution.
 ```{r claims_25000_plot, echo=TRUE}
 ggplot(claimdata_dt) +
     geom_density(aes(x = claim_amount)) +
-    scale_x_continuous(label = dollar)
+    scale_x_continuous(label = scales::dollar)
 ```
 
 The tail is long, and as our power law distribution seems to work for
@@ -627,9 +629,7 @@ predictive power.
 
 ```{r claim_amount_boruta, echo=TRUE, cache=TRUE, message=FALSE}
 claimdata_boruta_dt <- claimdata_dt %>%
-    select(-contains("policy_id")
-          ,-contains("exposure")
-          ,-contains("total_claims"))
+    select(-c(policy_id,exposure,total_claims))
 
 claimdata_boruta <- Boruta(claim_amount ~ .
                           ,data = claimdata_boruta_dt

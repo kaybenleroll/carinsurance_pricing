@@ -41,11 +41,11 @@ knitr::opts_chunk$set(tidy       = FALSE
                      ,fig.width  = 11
                      )
 
+library(tidyverse)
 library(data.table)
 library(dtplyr)
-library(dplyr)
+
 library(ggplot2)
-library(scales)
 library(feather)
 library(poweRlaw)
 
@@ -86,7 +86,7 @@ setDT(policyclaim_dt)
 glimpse(policyclaim_dt)
 
 claimdata_dt <- policyclaim_dt %>%
-    select(-contains("claim_count"), contains("total_claims")) %>%
+    select(-c(claim_count, total_claims)) %>%
     inner_join(claim_dt, by = 'policy_id')
 ```
 
@@ -1226,9 +1226,9 @@ paid - though this is no guarantee.
 total_train_premium <- sum(trainpolicies_dt$price_quote)
 total_train_claims  <- sum(trainclaim_dt$claim_amount)
 
-print(c(dollar(total_train_premium)
-       ,dollar(total_train_claims)
-       ,dollar(total_train_premium - total_train_claims)))
+print(c(scales::dollar(total_train_premium)
+       ,scales::dollar(total_train_claims)
+       ,scales::dollar(total_train_premium - total_train_claims)))
 ```
 
 So from what we have seen, we have taken in about 40% more in premium
@@ -1256,9 +1256,9 @@ ggplot(validpolicy_dt) +
 total_valid_premium <- sum(validpolicy_dt$price_quote)
 total_valid_claims  <- sum(validclaim_dt$claim_amount)
 
-print(c(dollar(total_valid_premium)
-       ,dollar(total_valid_claims)
-       ,dollar(total_valid_premium - total_valid_claims)))
+print(c(scales::dollar(total_valid_premium)
+       ,scales::dollar(total_valid_claims)
+       ,scales::dollar(total_valid_premium - total_valid_claims)))
 ```
 
 The validation set has a total premium of about 45% of the premium

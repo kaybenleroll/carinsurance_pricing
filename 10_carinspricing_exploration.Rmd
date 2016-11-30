@@ -37,19 +37,19 @@ knitr::opts_chunk$set(tidy       = FALSE
                      ,fig.width  = 11
                      )
 
+library(tidyverse)
 library(data.table)
 library(dtplyr)
-library(dplyr)
+
 library(ggplot2)
-library(scales)
+
 library(GGally)
 library(feather)
 
 library(CASdatasets)
 
 
-options(width            = 90)
-options(stringsAsFactors = FALSE)
+options(width            = 90L)
 
 options(datatable.print.nrows      = 10L)
 options(datatable.prettyprint.char = 80L)
@@ -78,11 +78,6 @@ setDT(policy1_dt)
 setDT(claims1_dt)
 setDT(policy2_dt)
 setDT(claims2_dt)
-
-rm(freMTPLfreq)
-rm(freMTPLsev)
-rm(freMTPL2freq)
-rm(freMTPL2sev)
 
 setnames(policy1_dt, c('policy_id','claim_count','exposure','power','car_age'
                       ,'driver_age','brand','fuel','region','density'))
@@ -312,7 +307,7 @@ we instead look at all claims below EUR 25,000:
 ```{r plot_claim_histogram_2, echo=TRUE, message=FALSE}
 ggplot(claims1_dt[claim_amount < 25000]) +
     geom_histogram(aes(x = claim_amount), bins = 50) +
-    scale_x_continuous(label = dollar)
+    scale_x_continuous(label = scales::dollar)
 ```
 
 Claims above 25,000 are so skewed that we look at these on a separate
@@ -321,7 +316,7 @@ plot with a logscale on the x-axis.
 ```{r plot_claim_histogram_3, echo=TRUE, message=FALSE}
 ggplot(claims1_dt[claim_amount >= 25000]) +
     geom_histogram(aes(x = claim_amount), bins = 50) +
-    scale_x_log10(label = dollar)
+    scale_x_log10(label = scales::dollar)
 ```
 
 To get a sense of the skew in terms of the right tail, we look at
@@ -331,7 +326,7 @@ a cumulative density plot of the claim amounts:
 ggplot(claims1_dt) +
     geom_line(aes(x = seq_along(claim_amount) / length(claim_amount)
                  ,y = sort(claim_amount))) +
-    scale_y_log10(label = dollar) +
+    scale_y_log10(label = scales::dollar) +
     xlab("Cumulative Probability") +
     ylab("Claim Amount")
 ```
@@ -360,7 +355,7 @@ Now we look at the total claims per policy.
 ```{r policy_claimtotal, echo=TRUE}
 ggplot(claims_amount_dt) +
     geom_histogram(aes(x = total_claims), bins = 50) +
-    scale_x_log10(label = dollar)
+    scale_x_log10(label = scales::dollar)
 ```
 
 We first check that the merge worked properly by ensuring that
@@ -378,7 +373,7 @@ We look at the cumulative claims per policy.
 ggplot(claims_amount_dt) +
     geom_line(aes(x = seq_along(total_claims) / length(total_claims)
                  ,y = sort(total_claims))) +
-    scale_y_log10(label = dollar) +
+    scale_y_log10(label = scales::dollar) +
     xlab("Cumulative Probability") +
     ylab("Claim Amount")
 ```
@@ -392,7 +387,7 @@ claims as we expect these amounts will dominate any visuals.
 ```{r totalamount_region_boxplot, echo=TRUE}
 ggplot(policyclaim_dt[total_claims > 0]) +
     geom_boxplot(aes(x = region, y = total_claims)) +
-    scale_y_log10(label = dollar) +
+    scale_y_log10(label = scales::dollar) +
     ggtitle("Boxplot of Total Claims on a Policy by region")
 ```
 
@@ -402,7 +397,7 @@ between 0 and 50,000.
 ```{r totalamount_region_standard, echo=TRUE}
 ggplot(policyclaim_dt[total_claims > 0 & total_claims < 25000]) +
     geom_boxplot(aes(x = region, y = total_claims)) +
-#    scale_y_log10(label = dollar) +
+    scale_y_log10(label = scales::comma) +
     ggtitle("Boxplot of Total Claims on a Policy by region")
 ```
 
@@ -443,6 +438,70 @@ ggplot(powerlaw_dt[logsize >= 3]) +
 Encouraged by the above plots, we will model part of the claim
 distribution with a power law - probably to work on the likelihood of
 larger claims.
+
+
+### Univariate Plots Facetted by Claim
+
+Now we split the data into two groups: those policies with no claims
+and those with at least one claim. We then create some univariate
+plots of the input data and facet one the claim/noclaim variable to
+get an idea of any differences between the two groups.
+
+```{r split_data_claim, echo=TRUE}
+claim_noclaim_dt <- policyclaim_dt %>%
+    mutate(claim = claim_count > 0)
+```
+
+Now that we have this data, we do the same thing as before, create the
+univariate plots of the categorical and numeric variables, and we
+facet on whether or not the policies have had a claim. This allows us
+to make direct comparisons across the variables.
+
+
+```{r facetted_univariate_numeric_plots, echo=TRUE}
+for(plot_var in vars_num) {
+    plotdata_dt <- claim_noclaim_dt %>%
+        select_(plot_var, "claim") %>%
+        mutate_(use_var = plot_var)
+
+    explore_plot <- ggplot(plotdata_dt) +
+        geom_histogram(aes(x = use_var), bins = 30) +
+        facet_wrap(~ claim, scales = 'free_y', nrow = 2) +
+        xlab(plot_var) +
+        ggtitle(paste0("Histograms for Variable: ", plot_var))
+
+    plot(explore_plot)
+}
+```
+
+
+```{r facetted_univariate_categorical_plots, echo=TRUE}
+for(plot_var in vars_cat) {
+    plotdata_dt <- claim_noclaim_dt %>%
+        select_(plot_var, "claim") %>%
+        mutate_(use_var = plot_var)
+
+    explore_plot <- ggplot(plotdata_dt) +
+        geom_bar(aes(x = use_var)) +
+        facet_wrap(~ claim, scales = 'free_y', nrow = 2) +
+        xlab(plot_var) +
+        ggtitle(paste0("Barplot of Counts for Variable: ", plot_var)) +
+        theme(axis.text.x = element_text(angle = 90, vjust = 0.5))
+
+
+    plot(explore_plot)
+}
+```
+
+
+
+
+
+
+
+
+
+
 
 
 # Data Cleaning
@@ -623,7 +682,7 @@ We have done some chopping and munging with this data, and we wish to
 preserve some of this work across the documents so we save them to
 disk in both CSV and feather format.
 
-```{r write_data_disk, echo=TRUE}
+```{r write_data_disk, echo=TRUE, results='hide'}
 ### We first drop variable num_claim as it repeats claim_count
 policyclaim_dt[, num_claim := NULL]
 

@@ -1143,7 +1143,7 @@ create_pricing_function <- function(claimrate_model_glm
                               ,newdata = policydata_dt
                               ,type = 'response')
 
-        risk_premium <- claim_rates * claim_sizes
+        risk_premium <- claim_rates * claim_sizes + largeloss_charge
 
         price_quote <- risk_premium * (1 + quote_ratio)
 

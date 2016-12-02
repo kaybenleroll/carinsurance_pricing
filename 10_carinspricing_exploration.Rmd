@@ -105,16 +105,18 @@ thing I will do is convert them to character strings. Factors can have
 some strange 'gotchas' in how they are used, so it is safe to switch
 them to character variables at the very start.
 
+*NB:* I will reverse the previous sentiment and leave these variables as factors for now.
+
 ```{r convert_factors_strings, echo=TRUE}
 ### We use data.table ':=' syntax for this as it is fast and easy to
 ### understand in this case.
 ###
 ### For future data manipulation we will use dplyr for its readability.
 
-policy1_dt[, power  := as.character(power)]
-policy1_dt[, brand  := as.character(brand)]
-policy1_dt[, fuel   := as.character(fuel)]
-policy1_dt[, region := as.character(region)]
+#policy1_dt[, power  := as.character(power)]
+#policy1_dt[, brand  := as.character(brand)]
+#policy1_dt[, fuel   := as.character(fuel)]
+#policy1_dt[, region := as.character(region)]
 ```
 
 We now create separate vectors for the numerical and categorical
@@ -138,6 +140,8 @@ for each one.
 
 ```{r explore_numeric_data, echo=TRUE}
 for(plot_var in vars_num) {
+    cat(paste0(plot_var, "\n"))
+    
     explore_plot <- ggplot() +
         geom_density(aes(x = policy1_dt[[plot_var]])) +
         xlab(plot_var) +
@@ -153,6 +157,8 @@ use histograms.
 
 ```{r explore_numeric_data_barplots, echo=TRUE}
 for(plot_var in vars_num) {
+    cat(paste0(plot_var, "\n"))
+    
     explore_plot <- ggplot() +
         geom_histogram(aes(x = policy1_dt[[plot_var]]), bins = 30) +
         xlab(plot_var) +
@@ -170,6 +176,8 @@ boxplots of the counts of the values.
 
 ```{r explore_categorical_data, echo=TRUE}
 for(plot_var in vars_cat) {
+    cat(paste0(plot_var, "\n"))
+    
     explore_plot <- ggplot() +
         geom_bar(aes(x = policy1_dt[[plot_var]])) +
         xlab(plot_var) +
@@ -189,7 +197,7 @@ without knowledge of the business it is hard to tell. Let us see how
 the exposures that are longer than 1 year are distributed.
 
 ```{r plot_long_exposures, echo=TRUE}
-ggplot(policy1_dt[exposure > 1]) +
+ggplot(policy1_dt %>% filter(exposure > 1)) +
     geom_density(aes(x = exposure))
 ```
 
@@ -203,10 +211,14 @@ We first see how a pairs plot looks. The size of the dataset makes
 this computationally onerous, so we sample 50,000 data points and
 create the pairs plot for those.
 
-```{r plot_pairsplot, echo=TRUE, message=FALSE, fig.width = 20, fig.height=15}
+```{r plot_pairsplot, echo=TRUE, message=FALSE, fig.width = 20, fig.height=15, cache=TRUE}
 pairsplot_count <- 10000
 
-ggpairs(policy1_dt[, -1, with = FALSE][sample(1:.N, pairsplot_count, replace = FALSE)])
+pairsdata_dt <- policy1_dt %>%
+    select(-policy_id) %>%
+    sample_n(pairsplot_count, replace = FALSE)
+
+ggpairs(pairsdata_dt)
 ```
 
 ### density vs region
@@ -307,7 +319,7 @@ we instead look at all claims below EUR 25,000:
 ```{r plot_claim_histogram_2, echo=TRUE, message=FALSE}
 ggplot(claims1_dt[claim_amount < 25000]) +
     geom_histogram(aes(x = claim_amount), bins = 50) +
-    scale_x_continuous(label = scales::dollar)
+    scale_x_continuous(labels = scales::dollar)
 ```
 
 Claims above 25,000 are so skewed that we look at these on a separate
@@ -316,7 +328,7 @@ plot with a logscale on the x-axis.
 ```{r plot_claim_histogram_3, echo=TRUE, message=FALSE}
 ggplot(claims1_dt[claim_amount >= 25000]) +
     geom_histogram(aes(x = claim_amount), bins = 50) +
-    scale_x_log10(label = scales::dollar)
+    scale_x_log10(labels = scales::dollar)
 ```
 
 To get a sense of the skew in terms of the right tail, we look at
@@ -326,7 +338,7 @@ a cumulative density plot of the claim amounts:
 ggplot(claims1_dt) +
     geom_line(aes(x = seq_along(claim_amount) / length(claim_amount)
                  ,y = sort(claim_amount))) +
-    scale_y_log10(label = scales::dollar) +
+    scale_y_log10(labels = scales::dollar) +
     xlab("Cumulative Probability") +
     ylab("Claim Amount")
 ```
@@ -355,7 +367,7 @@ Now we look at the total claims per policy.
 ```{r policy_claimtotal, echo=TRUE}
 ggplot(claims_amount_dt) +
     geom_histogram(aes(x = total_claims), bins = 50) +
-    scale_x_log10(label = scales::dollar)
+    scale_x_log10(labels = scales::dollar)
 ```
 
 We first check that the merge worked properly by ensuring that
@@ -373,7 +385,7 @@ We look at the cumulative claims per policy.
 ggplot(claims_amount_dt) +
     geom_line(aes(x = seq_along(total_claims) / length(total_claims)
                  ,y = sort(total_claims))) +
-    scale_y_log10(label = scales::dollar) +
+    scale_y_log10(labels = scales::dollar) +
     xlab("Cumulative Probability") +
     ylab("Claim Amount")
 ```
@@ -387,7 +399,7 @@ claims as we expect these amounts will dominate any visuals.
 ```{r totalamount_region_boxplot, echo=TRUE}
 ggplot(policyclaim_dt[total_claims > 0]) +
     geom_boxplot(aes(x = region, y = total_claims)) +
-    scale_y_log10(label = scales::dollar) +
+    scale_y_log10(labels = scales::dollar) +
     ggtitle("Boxplot of Total Claims on a Policy by region")
 ```
 
@@ -397,7 +409,7 @@ between 0 and 50,000.
 ```{r totalamount_region_standard, echo=TRUE}
 ggplot(policyclaim_dt[total_claims > 0 & total_claims < 25000]) +
     geom_boxplot(aes(x = region, y = total_claims)) +
-    scale_y_log10(label = scales::comma) +
+    scale_y_log10(labels = scales::comma) +
     ggtitle("Boxplot of Total Claims on a Policy by region")
 ```
 
@@ -413,8 +425,7 @@ logclaimsize_seq <- seq(0, 7, by = 0.1)
 
 powerlaw_dt <- data.table(
     logsize = logclaimsize_seq
-   ,count   = sapply(logclaimsize_seq
-                    ,function(iter_m)
+   ,count   = sapply(logclaimsize_seq, function(iter_m)
                          nrow(claims1_dt[claim_amount > 10^iter_m]))
 )
 
@@ -440,7 +451,7 @@ distribution with a power law - probably to work on the likelihood of
 larger claims.
 
 
-### Univariate Plots Facetted by Claim
+## Univariate Plots Facetted by Claim
 
 Now we split the data into two groups: those policies with no claims
 and those with at least one claim. We then create some univariate
@@ -457,51 +468,48 @@ univariate plots of the categorical and numeric variables, and we
 facet on whether or not the policies have had a claim. This allows us
 to make direct comparisons across the variables.
 
+As before, we start with the numeric variables first:
 
 ```{r facetted_univariate_numeric_plots, echo=TRUE}
 for(plot_var in vars_num) {
+    cat(paste0(plot_var, "\n"))
+    
     plotdata_dt <- claim_noclaim_dt %>%
         select_(plot_var, "claim") %>%
         mutate_(use_var = plot_var)
 
     explore_plot <- ggplot(plotdata_dt) +
         geom_histogram(aes(x = use_var), bins = 30) +
-        facet_wrap(~ claim, scales = 'free_y', nrow = 2) +
+        facet_wrap(~claim, scales = 'free_y', nrow = 2) +
+        scale_y_continuous(labels = scales::comma) +
         xlab(plot_var) +
-        ggtitle(paste0("Histograms for Variable: ", plot_var))
+        ggtitle(paste0("Claim-facetted Histograms for Variable: ", plot_var))
 
     plot(explore_plot)
 }
 ```
 
+Apart from the obvious distinction between claim counts, there appears to be very little difference across the two groups, so we take a look at categorical variables.
 
 ```{r facetted_univariate_categorical_plots, echo=TRUE}
 for(plot_var in vars_cat) {
+    cat(paste0(plot_var, "\n"))
+    
     plotdata_dt <- claim_noclaim_dt %>%
         select_(plot_var, "claim") %>%
         mutate_(use_var = plot_var)
 
     explore_plot <- ggplot(plotdata_dt) +
         geom_bar(aes(x = use_var)) +
-        facet_wrap(~ claim, scales = 'free_y', nrow = 2) +
+        facet_wrap(~claim, scales = 'free_y', nrow = 2) +
+        scale_y_continuous(labels = scales::comma) +
         xlab(plot_var) +
-        ggtitle(paste0("Barplot of Counts for Variable: ", plot_var)) +
+        ggtitle(paste0("Claim-facetted Barplots of Counts for Variable: ", plot_var)) +
         theme(axis.text.x = element_text(angle = 90, vjust = 0.5))
-
 
     plot(explore_plot)
 }
 ```
-
-
-
-
-
-
-
-
-
-
 
 
 # Data Cleaning
@@ -684,7 +692,7 @@ disk in both CSV and feather format.
 
 ```{r write_data_disk, echo=TRUE, results='hide'}
 ### We first drop variable num_claim as it repeats claim_count
-policyclaim_dt[, num_claim := NULL]
+policyclaim_dt <- policyclaim_dt %>% select(-num_claim)
 
 
 write.csv(policy1_dt,         file = 'data/policy_data.csv',      row.names = FALSE)

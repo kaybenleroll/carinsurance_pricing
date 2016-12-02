@@ -45,7 +45,6 @@ library(tidyverse)
 library(data.table)
 library(dtplyr)
 
-library(ggplot2)
 library(feather)
 library(poweRlaw)
 
@@ -336,7 +335,7 @@ newdata_1_dt[, claim_rate := testdata_claimrates]
 
 ggplot(newdata_1_dt) +
     geom_point(aes(x = cat_driver_age, y = claim_rate, colour = fuel)) +
-    facet_wrap(~ cat_car_age) +
+    facet_wrap(~cat_car_age) +
     expand_limits(y = 0) +
     ggtitle("Plot of the Predicted Claim Rates for Various Variable Combinations")
 ```

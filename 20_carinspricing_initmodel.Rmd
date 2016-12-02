@@ -44,7 +44,6 @@ library(tidyverse)
 library(data.table)
 library(dtplyr)
 
-library(ggplot2)
 library(feather)
 library(Boruta)
 
@@ -506,7 +505,7 @@ To try this, we should look at a plot of the current distribution.
 ```{r claims_25000_plot, echo=TRUE}
 ggplot(claimdata_dt) +
     geom_density(aes(x = claim_amount)) +
-    scale_x_continuous(label = scales::dollar)
+    scale_x_continuous(labels = scales::dollar)
 ```
 
 The tail is long, and as our power law distribution seems to work for

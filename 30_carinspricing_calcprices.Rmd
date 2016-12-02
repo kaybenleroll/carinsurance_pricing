@@ -623,11 +623,7 @@ claim_rate <- predict(claim_model_05, newdata = trainpolicies_dt
 sim_rates <- claim_rate * trainpolicies_dt$exposure
 
 
-run_mc_sim <- function() {
-    sapply(sim_rates, function(iter_rate) rpois(1, iter_rate))
-}
-
-sim_claimcount_05 <- replicate(n_sim, sum(run_mc_sim()))
+sim_claimcount_05 <- rpois(n_sim, sum(sim_rates))
 ```
 
 ```{r assess_simple_model_05_plot, echo=TRUE}
@@ -649,11 +645,8 @@ claim_rate <- predict(claim_model_07, newdata = trainpolicies_dt
 
 sim_rates <- claim_rate * trainpolicies_dt$exposure
 
-run_mc_sim <- function() {
-    sapply(sim_rates, function(iter_rate) rpois(1, iter_rate))
-}
 
-sim_claimcount_07 <- replicate(n_sim, sum(run_mc_sim()))
+sim_claimcount_07 <- rpois(n_sim, sum(sim_rates))
 ```
 
 ```{r assess_simple_model_07_plot, echo=TRUE}
@@ -682,11 +675,7 @@ claim_rate <- predict(claim_model_07, newdata = validpolicy_dt
 sim_rates <- claim_rate * validpolicy_dt$exposure
 
 
-run_mc_sim <- function() {
-    sapply(sim_rates, function(iter_rate) rpois(1, iter_rate))
-}
-
-sim_claimcount_07 <- replicate(n_sim, sum(run_mc_sim()))
+sim_claimcount_07 <- rpois(n_sim, sum(sim_rates))
 ```
 
 ```{r assess_simple_model_valid_07_plot, echo=TRUE}
@@ -713,17 +702,13 @@ can wrap this data in the creation of each MonteCarlo simulation.
 ```{r assess_stderr_model_05, echo=TRUE, cache=TRUE}
 data_mat <- t(model.matrix(formula(claim_model_05), trainpolicies_dt))
 
-run_mc_sim <- function() {
-    model_coef <- as.vector(coef(arm::sim(claim_model_05, n.sim = 1)))
+model_coef <- coef(arm::sim(claim_model_05, n.sim = n_sim))
 
-    output <- as.vector(model_coef %*% data_mat)
+output <- model_coef %*% data_mat
 
-    sim_rates <- exp(output) * trainpolicies_dt$exposure
+sim_rates <- as.vector(exp(output) %*% trainpolicies_dt$exposure)
 
-    sapply(sim_rates, function(iter_rate) rpois(1, iter_rate))
-}
-
-sim_claimcount_stderr_05 <- replicate(n_sim, sum(run_mc_sim()))
+sim_claimcount_stderr_05 <- rpois(n_sim, sim_rates)
 ```
 
 ```{r assess_stderr_model_05_plot, echo=TRUE}
@@ -747,17 +732,13 @@ model and repeat the count simulations.
 ```{r assess_stderr_model_07, echo=TRUE, cache=TRUE}
 data_mat <- t(model.matrix(formula(claim_model_07), trainpolicies_dt))
 
-run_mc_sim <- function() {
-    model_coef <- as.vector(coef(arm::sim(claim_model_07, n.sim = 1)))
+model_coef <- coef(arm::sim(claim_model_07, n.sim = n_sim))
 
-    output <- as.vector(model_coef %*% data_mat)
+output <- model_coef %*% data_mat
 
-    sim_rates <- exp(output) * trainpolicies_dt$exposure
+sim_rates <- as.vector(exp(output) %*% trainpolicies_dt$exposure)
 
-    sapply(sim_rates, function(iter_rate) rpois(1, iter_rate))
-}
-
-sim_claimcount_stderr_07 <- replicate(n_sim, sum(run_mc_sim()))
+sim_claimcount_stderr_07 <- rpois(n_sim, sim_rates)
 ```
 
 ```{r assess_stderr_model_07_plot, echo=TRUE}
@@ -780,31 +761,24 @@ the models easier and should work
 ```{r assess_stderr_model_valid, echo=TRUE, cache=TRUE}
 data_mat <- t(model.matrix(formula(claim_model_05), validpolicy_dt))
 
-run_mc_sim <- function() {
-    model_coef <- as.vector(coef(arm::sim(claim_model_05, n.sim = 1)))
+model_coef <- coef(arm::sim(claim_model_05, n.sim = n_sim))
 
-    output <- as.vector(model_coef %*% data_mat)
+output <- model_coef %*% data_mat
 
-    sim_rates <- exp(output) * validpolicy_dt$exposure
+sim_rates <- as.vector(exp(output) %*% validpolicy_dt$exposure)
 
-    sapply(sim_rates, function(iter_rate) rpois(1, iter_rate))
-}
+sim_claimcount_stderr_valid_05 <- rpois(n_sim, sim_rates)
 
-sim_claimcount_stderr_valid_05 <- replicate(n_sim, sum(run_mc_sim()))
 
 data_mat <- t(model.matrix(formula(claim_model_07), validpolicy_dt))
 
-run_mc_sim <- function() {
-    model_coef <- as.vector(coef(arm::sim(claim_model_07, n.sim = 1)))
+model_coef <- coef(arm::sim(claim_model_07, n.sim = n_sim))
 
-    output <- as.vector(model_coef %*% data_mat)
+output <- model_coef %*% data_mat
 
-    sim_rates <- exp(output) * validpolicy_dt$exposure
+sim_rates <- as.vector(exp(output) %*% validpolicy_dt$exposure)
 
-    sapply(sim_rates, function(iter_rate) rpois(1, iter_rate))
-}
-
-sim_claimcount_stderr_valid_07 <- replicate(n_sim, sum(run_mc_sim()))
+sim_claimcount_stderr_valid_07 <- rpois(n_sim, sim_rates)
 ```
 
 ```{r assess_stderr_model_validation_plot, echo=TRUE}

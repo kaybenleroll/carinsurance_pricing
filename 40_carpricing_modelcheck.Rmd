@@ -48,7 +48,7 @@ library(feather)
 library(poweRlaw)
 
 
-options(width            = 90)
+options(width            = 90L)
 options(stringsAsFactors = FALSE)
 
 options(datatable.print.nrows      = 10L)
@@ -65,7 +65,7 @@ simulations.
 ```{r config_params, echo=TRUE}
 set.seed(242)
 
-n_sim <- 200
+n_sim <- 500
 
 largeloss_threshold <- 5000
 largeloss_sf        <- 2.72

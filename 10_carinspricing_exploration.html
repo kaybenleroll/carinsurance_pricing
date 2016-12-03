@@ -295,7 +295,7 @@ vars_cat &lt;- c('power','brand','fuel','region')</code></pre>
 <p>We iterate through the numeric variables, looking at a density plot for each one.</p>
 <pre class="r"><code>for(plot_var in vars_num) {
     cat(paste0(plot_var, &quot;\n&quot;))
-    
+
     explore_plot &lt;- ggplot() +
         geom_density(aes(x = policy1_dt[[plot_var]])) +
         xlab(plot_var) +
@@ -316,7 +316,7 @@ vars_cat &lt;- c('power','brand','fuel','region')</code></pre>
 <p>None of these plots seem very useful, so we try the same thing but now use histograms.</p>
 <pre class="r"><code>for(plot_var in vars_num) {
     cat(paste0(plot_var, &quot;\n&quot;))
-    
+
     explore_plot &lt;- ggplot() +
         geom_histogram(aes(x = policy1_dt[[plot_var]]), bins = 30) +
         xlab(plot_var) +
@@ -340,7 +340,7 @@ vars_cat &lt;- c('power','brand','fuel','region')</code></pre>
 <p>We now iterate through each of the categorical variables by looking at boxplots of the counts of the values.</p>
 <pre class="r"><code>for(plot_var in vars_cat) {
     cat(paste0(plot_var, &quot;\n&quot;))
-    
+
     explore_plot &lt;- ggplot() +
         geom_bar(aes(x = policy1_dt[[plot_var]])) +
         xlab(plot_var) +
@@ -548,7 +548,7 @@ ggplot(powerlaw_dt) +
 <p>As before, we start with the numeric variables first:</p>
 <pre class="r"><code>for(plot_var in vars_num) {
     cat(paste0(plot_var, &quot;\n&quot;))
-    
+
     plotdata_dt &lt;- claim_noclaim_dt %&gt;%
         select_(plot_var, &quot;claim&quot;) %&gt;%
         mutate_(use_var = plot_var)
@@ -575,7 +575,7 @@ ggplot(powerlaw_dt) +
 <p>Apart from the obvious distinction between claim counts, there appears to be very little difference across the two groups, so we take a look at categorical variables.</p>
 <pre class="r"><code>for(plot_var in vars_cat) {
     cat(paste0(plot_var, &quot;\n&quot;))
-    
+
     plotdata_dt &lt;- claim_noclaim_dt %&gt;%
         select_(plot_var, &quot;claim&quot;) %&gt;%
         mutate_(use_var = plot_var)

@@ -41,8 +41,6 @@ library(tidyverse)
 library(data.table)
 library(dtplyr)
 
-library(ggplot2)
-
 library(GGally)
 library(feather)
 
@@ -141,7 +139,7 @@ for each one.
 ```{r explore_numeric_data, echo=TRUE}
 for(plot_var in vars_num) {
     cat(paste0(plot_var, "\n"))
-    
+
     explore_plot <- ggplot() +
         geom_density(aes(x = policy1_dt[[plot_var]])) +
         xlab(plot_var) +
@@ -158,7 +156,7 @@ use histograms.
 ```{r explore_numeric_data_barplots, echo=TRUE}
 for(plot_var in vars_num) {
     cat(paste0(plot_var, "\n"))
-    
+
     explore_plot <- ggplot() +
         geom_histogram(aes(x = policy1_dt[[plot_var]]), bins = 30) +
         xlab(plot_var) +
@@ -177,7 +175,7 @@ boxplots of the counts of the values.
 ```{r explore_categorical_data, echo=TRUE}
 for(plot_var in vars_cat) {
     cat(paste0(plot_var, "\n"))
-    
+
     explore_plot <- ggplot() +
         geom_bar(aes(x = policy1_dt[[plot_var]])) +
         xlab(plot_var) +
@@ -473,7 +471,7 @@ As before, we start with the numeric variables first:
 ```{r facetted_univariate_numeric_plots, echo=TRUE}
 for(plot_var in vars_num) {
     cat(paste0(plot_var, "\n"))
-    
+
     plotdata_dt <- claim_noclaim_dt %>%
         select_(plot_var, "claim") %>%
         mutate_(use_var = plot_var)
@@ -494,7 +492,7 @@ Apart from the obvious distinction between claim counts, there appears to be ver
 ```{r facetted_univariate_categorical_plots, echo=TRUE}
 for(plot_var in vars_cat) {
     cat(paste0(plot_var, "\n"))
-    
+
     plotdata_dt <- claim_noclaim_dt %>%
         select_(plot_var, "claim") %>%
         mutate_(use_var = plot_var)

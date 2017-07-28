@@ -8,3 +8,4 @@ data/*.rds
 
 *_cache/*
 *_files/*
+.Rproj.user

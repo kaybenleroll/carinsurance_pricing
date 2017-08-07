@@ -166,7 +166,8 @@ simulator_creator <- create_assessment_simulator(claimrate_model_glm
                                                 ,claimsize_model_glm
                                                 ,largeloss_threshold
                                                 ,largeloss_rate
-                                                ,largeloss_sf)
+                                                ,largeloss_sf
+                                                ,n_sim)
 ```
 
 With this infrastructure in place we are now in position to assess the
@@ -190,7 +191,7 @@ use_dt <- trainpolicy_dt
 
 run_mc_train_sim <- simulator_creator(use_dt)
 
-sim_train_losses <- replicate(n_sim, run_mc_train_sim())
+sim_train_losses <- run_mc_train_sim()
 
 total_riskprem   <- sum(use_dt$risk_premium)
 received_premium <- sum(use_dt$price_quote)
@@ -201,7 +202,7 @@ simulated claim payments against the premium received.
 
 ```{r assess_training_data_plot, echo=TRUE}
 ggplot() +
-    stat_density(aes(x = sim_train_losses['total_claims',]), geom = 'line') +
+    stat_density(aes(x = sim_train_losses['total_claims']), geom = 'line') +
     geom_vline(aes(xintercept = received_premium), colour = 'red') +
     geom_vline(aes(xintercept = total_riskprem),   colour = 'blue') +
     scale_x_continuous(labels = scales::dollar)
@@ -223,7 +224,7 @@ fixed amount for each claim and seeing how this looks.
 run_mc_train_fixedclaim_sim <- simulator_creator(use_dt
                                                 ,simulate_claim_size = FALSE)
 
-sim_train_fixedclaim_losses <- replicate(n_sim, run_mc_train_fixedclaim_sim())
+sim_train_fixedclaim_losses <- run_mc_train_fixedclaim_sim()
 
 total_riskprem   <- sum(use_dt$risk_premium)
 received_premium <- sum(use_dt$price_quote)
@@ -231,7 +232,7 @@ received_premium <- sum(use_dt$price_quote)
 
 ```{r assess_training_data_fixedclaim_plot, echo=TRUE}
 ggplot() +
-    stat_density(aes(x = sim_train_fixedclaim_losses['total_claims',]), geom = 'line') +
+    stat_density(aes(x = sim_train_fixedclaim_losses['total_claims']), geom = 'line') +
     geom_vline(aes(xintercept = received_premium), colour = 'red') +
     geom_vline(aes(xintercept = total_riskprem),   colour = 'blue') +
     scale_x_continuous(labels = scales::dollar)
@@ -244,7 +245,7 @@ use_dt <- validpolicy_dt
 
 run_mc_valid_sim <- simulator_creator(use_dt)
 
-sim_valid_losses <- replicate(n_sim, run_mc_valid_sim())
+sim_valid_losses <- run_mc_valid_sim()
 
 total_riskprem   <- sum(use_dt$risk_premium)
 received_premium <- sum(use_dt$price_quote)
@@ -252,7 +253,7 @@ received_premium <- sum(use_dt$price_quote)
 
 ```{r assess_validation_data_plot, echo=TRUE}
 ggplot() +
-    stat_density(aes(x = sim_valid_losses['total_claims',]), geom = 'line') +
+    stat_density(aes(x = sim_valid_losses['total_claims']), geom = 'line') +
     geom_vline(aes(xintercept = received_premium), colour = 'red') +
     geom_vline(aes(xintercept = total_riskprem),   colour = 'blue') +
     scale_x_continuous(labels = scales::dollar)

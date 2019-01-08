@@ -1,36 +1,20 @@
-
 ---
 title: "GLMs for Car Insurance Pricing: Pricing"
-author: "Mick Cooney"
+author: "Mick Cooney <mickcooney@gmail.com>"
 date: "13 July 2016"
 output:
   html_document:
-    toc: true
-    number_sections: true
     fig_caption: yes
-    theme: cerulean
-    css: styles.css
+    theme: spacelab #sandstone #spacelab #flatly
+    highlight: pygments
+    number_sections: TRUE
+    toc: TRUE
+    toc_depth: 2
+    toc_float:
+      smooth_scroll: FALSE
   pdf_document: default
 ---
 
-<!--
-(Title:) GLMs for Car Insurance Pricing
-
-Author: Mick Cooney
-
-Date: 2016
-
-Abstract: This document is part of a series investigating the use of
-generalised linear models to price car insurance. This document uses
-work from the previous workbooks to start calculating price quotes for
-car insurance policies. We pursue more traditional methods for this,
-such as the use of hold-out data and explicitly removing data from the
-input data.
-
-
-Keywords: car-insurance pricing
-
--->
 
 ```{r knit_opts, include = FALSE}
 rm(list = ls())
@@ -58,6 +42,16 @@ options(datatable.prettyprint.char = 80L)
 source("custom_functions.R")
 ```
 
+
+This document is part of a series investigating the use of generalised linear
+models to price car insurance. This document uses work from the previous
+workbooks to start calculating price quotes for car insurance policies. We
+pursue more traditional methods for this, such as the use of hold-out data and
+explicitly removing data from the input data.
+
+
+
+
 # Set Parameters and Load Data
 
 Before we begin we will configure some parameters.
@@ -74,9 +68,9 @@ Once again, we load our data in from feather files and construct a
 dataset for the claims from the policy data.
 
 ```{r load_data, echo=TRUE}
-policy_dt      <- read_feather("data/policy_data.feather")
-claim_dt       <- read_feather("data/claim_data.feather")
-policyclaim_dt <- read_feather("data/policyclaim_data.feather")
+policy_dt      <- read_rds("data/policy_dt.rds")
+claim_dt       <- read_rds("data/claim_dt.rds")
+policyclaim_dt <- read_rds("data/policyclaim_dt.rds")
 
 setDT(policy_dt)
 setDT(claim_dt)
@@ -1295,3 +1289,11 @@ saveRDS(claim_model_07, file = 'data/claim_model.rds',    compress = 'xz')
 saveRDS(size_model_03,  file = 'data/size_model.rds',     compress = 'xz')
 saveRDS(premium_quoter, file = 'data/premium_quoter.rds', compress = 'xz')
 ```
+
+
+# R Environment
+
+```{r show_session_info, echo=TRUE}
+devtools::session_info()
+```
+

@@ -1,14 +1,17 @@
 ---
 title: "GLMs for Car Insurance Pricing: Initial Modeling"
-author: "Mick Cooney"
+author: "Mick Cooney <mickcooney@gmail.com>"
 date: "13 July 2016"
 output:
   html_document:
-    toc: true
-    number_sections: true
     fig_caption: yes
-    theme: cerulean
-    css: styles.css
+    theme: spacelab #sandstone #spacelab #flatly
+    highlight: pygments
+    number_sections: TRUE
+    toc: TRUE
+    toc_depth: 2
+    toc_float:
+      smooth_scroll: FALSE
   pdf_document: default
 ---
 
@@ -19,12 +22,6 @@ Author: Mick Cooney
 
 Date: 2016
 
-Abstract: This document is part of a series investigating the use of
-generalised linear models to price car insurance. This document
-focuses on the production of some simple GLM models for both a Poisson
-and a Gamma process to assess both the frequency and the size of
-claims. We will discuss different ways to model claims and then
-combine these to produce a price for the premium.
 
 
 Keywords: car-insurance
@@ -59,6 +56,15 @@ set.seed(142)
 source("custom_functions.R")
 ```
 
+This document is part of a series investigating the use of generalised linear
+models to price car insurance. This document focuses on the production of some
+simple GLM models for both a Poisson and a Gamma process to assess both the
+frequency and the size of claims. We will discuss different ways to model
+claims and then combine these to produce a price for the premium.
+
+
+
+
 # Load Data
 
 In the previous document we saved our work as `feather` files and so
@@ -67,9 +73,9 @@ we restore those tables now. We will mainly work with the
 as they may be useful later.
 
 ```{r load_data, echo=TRUE}
-policy_dt      <- read_feather("data/policy_data.feather")
-claim_dt       <- read_feather("data/claim_data.feather")
-policyclaim_dt <- read_feather("data/policyclaim_data.feather")
+policy_dt      <- read_rds("data/policy_dt.rds")
+claim_dt       <- read_rds("data/claim_dt.rds")
+policyclaim_dt <- read_rds("data/policyclaim_dt.rds")
 
 setDT(policy_dt)
 setDT(claim_dt)
@@ -404,9 +410,11 @@ particular. That is not a mistake, the model truly is that terrible!
 It is so bad in fact, it might be worth looking at a plot.
 
 ```{r claimsize_lognormal_plot, echo=TRUE}
+sigma_model4 <- summary(model4)$sigma
+
 ggplot(claimdata_dt) +
     geom_line(aes(x = claim_amount, y = claim_amount), size= 0.25) +
-    geom_point(aes(x = claim_amount, y = exp(predict(model4, type = 'response')))
+    geom_point(aes(x = claim_amount, y = exp(predict(model4, type = 'response') + 0.5 * sigma_model4^2))
               ,size = 0.4, alpha = 0.2) +
     expand_limits(y = 0) +
     xlab("Claim Amount") +
@@ -450,9 +458,11 @@ model6 <- lm(log(claim_amount) ~ brand + cat_car_age + cat_driver_age + fuel +
 
 summary(model6)
 
+sigma_model6 <- summary(model6)$sigma
+
 ggplot(claimdata_dt) +
     geom_line(aes(x = claim_amount, y = claim_amount), size = 0.25) +
-    geom_point(aes(x = claim_amount, y = exp(predict(model6, type = 'response')))
+    geom_point(aes(x = claim_amount, y = exp(predict(model6, type = 'response') + 0.5 * sigma_model6^2))
               ,size = 0.4, alpha = 0.2) +
     expand_limits(y = 0) +
     xlab("Claim Amount") +
@@ -568,9 +578,11 @@ model10 <- lm(log(claim_amount) ~ cat_car_age + fuel, data = claim_15000_dt)
 
 summary(model10)
 
+sigma_model10 <- summary(model10)$sigma
+
 ggplot(claim_15000_dt) +
     geom_line(aes(x = claim_amount, y = claim_amount), size = 0.25) +
-    geom_point(aes(x = claim_amount, y = exp(predict(model10, type = 'response')))
+    geom_point(aes(x = claim_amount, y = exp(predict(model10, type = 'response') + 0.5 * sigma_model10^2))
               ,size = 0.4, alpha = 0.2) +
     expand_limits(y = 0) +
     xlab("Claim Amount") +
@@ -659,3 +671,11 @@ ggplot(claim_5000_dt) +
 ```
 
 Once again, the model is quite a poor fit with a lot of unexplained variance.
+
+
+# R Environment
+
+```{r show_session_info, echo=TRUE}
+devtools::session_info()
+```
+

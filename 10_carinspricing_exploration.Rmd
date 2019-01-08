@@ -1,14 +1,17 @@
 ---
 title: "GLMs for Car Insurance Pricing: Initial Data Exploration"
-author: "Mick Cooney"
+author: "Mick Cooney <mickcooney@gmail.com>"
 date: "13 July 2016"
 output:
   html_document:
-    toc: true
-    number_sections: true
     fig_caption: yes
-    theme: cerulean
-    css: styles.css
+    theme: spacelab #sandstone #spacelab #flatly
+    highlight: pygments
+    number_sections: TRUE
+    toc: TRUE
+    toc_depth: 2
+    toc_float:
+      smooth_scroll: FALSE
   pdf_document: default
 ---
 
@@ -56,6 +59,14 @@ set.seed(42)
 
 source("custom_functions.R")
 ```
+
+
+This document is the first in a series for a project looking at a simple method
+for pricing car insurance based on claims data. This rmarkdown document focuses
+on loading the initial data and performing some systematic data exploration and
+cleaning.
+
+
 
 # Load Data
 
@@ -693,11 +704,23 @@ disk in both CSV and feather format.
 policyclaim_dt <- policyclaim_dt %>% select(-num_claim)
 
 
-write.csv(policy1_dt,         file = 'data/policy_data.csv',      row.names = FALSE)
-write.csv(claims1_dt,         file = 'data/claim_data.csv',       row.names = FALSE)
-write.csv(policyclaim_dt,     file = 'data/policyclaim_data.csv', row.names = FALSE)
+write_csv(policy1_dt,         path = 'data/policy_data.csv')
+write_csv(claims1_dt,         path = 'data/claim_data.csv')
+write_csv(policyclaim_dt,     path = 'data/policyclaim_data.csv')
+
+write_rds(policy1_dt,         path = 'data/policy_dt.rds')
+write_rds(claims1_dt,         path = 'data/claim_dt.rds')
+write_rds(policyclaim_dt,     path = 'data/policyclaim_dt.rds')
 
 write_feather(policy1_dt,     path = 'data/policy_data.feather')
 write_feather(claims1_dt,     path = 'data/claim_data.feather')
 write_feather(policyclaim_dt, path = 'data/policyclaim_data.feather')
 ```
+
+
+# R Environment
+
+```{r show_session_info, echo=TRUE}
+devtools::session_info()
+```
+

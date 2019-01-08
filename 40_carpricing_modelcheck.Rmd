@@ -1,7 +1,6 @@
-
 ---
 title: "GLMs for Car Insurance Pricing: Model Assessment"
-author: "Mick Cooney"
+author: "Mick Cooney <mickcooney@gmail.com>"
 date: "13 July 2016"
 output:
   html_document:
@@ -13,23 +12,7 @@ output:
   pdf_document: default
 ---
 
-<!--
-(Title:) GLMs for Car Insurance Pricing
 
-Author: Mick Cooney
-
-Date: 2016
-
-Abstract: This document is part of a series investigating the use of
-generalised linear models to price car insurance. This document
-assesses the pricing models built previously and uses MonteCarlo
-simulation to discover the range of possible outcomes that are
-possible assuming we get the data correct. The main focus is to get
-assess the distribution of possible outcomes.
-
-Keywords: car-insurance pricing assessment
-
--->
 
 ```{r knit_opts, include = FALSE}
 rm(list = ls())
@@ -56,6 +39,15 @@ options(datatable.prettyprint.char = 80L)
 
 source("custom_functions.R")
 ```
+
+
+This document is part of a series investigating the use of generalised linear
+models to price car insurance. This document assesses the pricing models built
+previously and uses MonteCarlo simulation to discover the range of possible
+outcomes that are possible assuming we get the data correct. The main focus is
+to get assess the distribution of possible outcomes.
+
+
 
 # Set Parameters and Load Data
 
@@ -257,3 +249,11 @@ ggplot() +
     geom_vline(aes(xintercept = total_riskprem),   colour = 'blue') +
     scale_x_continuous(labels = scales::dollar)
 ```
+
+
+# R Environment
+
+```{r show_session_info, echo=TRUE}
+devtools::session_info()
+```
+

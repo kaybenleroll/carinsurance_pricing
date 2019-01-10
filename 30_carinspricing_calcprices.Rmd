@@ -707,7 +707,7 @@ can wrap this data in the creation of each MonteCarlo simulation.
 data_mat <- t(model.matrix(formula(claim_model_05), trainpolicies_dt))
 
 run_mc_sim <- function() {
-    model_coef <- as.vector(coef(arm::sim(claim_model_05, n.sim = 1)))
+    model_coef <- coef(arm::sim(claim_model_05, n.sim = 2))[1,]
 
     output <- as.vector(model_coef %*% data_mat)
 
@@ -741,7 +741,7 @@ model and repeat the count simulations.
 data_mat <- t(model.matrix(formula(claim_model_07), trainpolicies_dt))
 
 run_mc_sim <- function() {
-    model_coef <- as.vector(coef(arm::sim(claim_model_07, n.sim = 1)))
+    model_coef <- coef(arm::sim(claim_model_07, n.sim = 2))[1,]
 
     output <- as.vector(model_coef %*% data_mat)
 
@@ -774,7 +774,7 @@ the models easier and should work
 data_mat <- t(model.matrix(formula(claim_model_05), validpolicy_dt))
 
 run_mc_sim <- function() {
-    model_coef <- as.vector(coef(arm::sim(claim_model_05, n.sim = 1)))
+    model_coef <- coef(arm::sim(claim_model_05, n.sim = 2))[1,]
 
     output <- as.vector(model_coef %*% data_mat)
 
@@ -788,7 +788,7 @@ sim_claimcount_stderr_valid_05 <- replicate(n_sim, sum(run_mc_sim()))
 data_mat <- t(model.matrix(formula(claim_model_07), validpolicy_dt))
 
 run_mc_sim <- function() {
-    model_coef <- as.vector(coef(arm::sim(claim_model_07, n.sim = 1)))
+    model_coef <- coef(arm::sim(claim_model_07, n.sim = 2))[1,]
 
     output <- as.vector(model_coef %*% data_mat)
 

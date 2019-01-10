@@ -15,18 +15,6 @@ output:
   pdf_document: default
 ---
 
-<!--
-(Title:) GLMs for Car Insurance Pricing
-
-Author: Mick Cooney
-
-Date: 2016
-
-
-
-Keywords: car-insurance
-
--->
 
 ```{r knit_opts, include = FALSE}
 rm(list = ls())

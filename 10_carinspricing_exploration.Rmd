@@ -721,6 +721,6 @@ write_feather(policyclaim_dt, path = 'data/policyclaim_data.feather')
 # R Environment
 
 ```{r show_session_info, echo=TRUE}
-devtools::session_info()
+sessioninfo::session_info()
 ```
 

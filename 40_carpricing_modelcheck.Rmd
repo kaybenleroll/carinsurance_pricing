@@ -254,6 +254,6 @@ ggplot() +
 # R Environment
 
 ```{r show_session_info, echo=TRUE}
-devtools::session_info()
+sessioninfo::session_info()
 ```
 

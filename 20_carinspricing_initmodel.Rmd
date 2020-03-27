@@ -664,6 +664,6 @@ Once again, the model is quite a poor fit with a lot of unexplained variance.
 # R Environment
 
 ```{r show_session_info, echo=TRUE}
-devtools::session_info()
+sessioninfo::session_info()
 ```
 

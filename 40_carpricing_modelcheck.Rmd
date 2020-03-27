@@ -4,11 +4,14 @@ author: "Mick Cooney <mickcooney@gmail.com>"
 date: "13 July 2016"
 output:
   html_document:
-    toc: true
-    number_sections: true
     fig_caption: yes
-    theme: cerulean
-    css: styles.css
+    theme: spacelab #sandstone #spacelab #flatly
+    highlight: pygments
+    number_sections: TRUE
+    toc: TRUE
+    toc_depth: 2
+    toc_float:
+      smooth_scroll: FALSE
   pdf_document: default
 ---
 

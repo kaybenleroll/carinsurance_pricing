@@ -1,0 +1,15 @@
+.Rhistory
+.RData
+.Rproj.user
+
+.git
+
+*.Rmd
+*.html
+
+*_cache
+*_files
+
+data/*.rds
+data/*.feather
+data/*.csv

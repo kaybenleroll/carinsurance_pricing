@@ -1,4 +1,5 @@
-DOCKER_USER=dd
+DOCKER_USER=mcooney
+
 PROJECT_USER=kaybenleroll
 PROJECT_NAME=carinsurance_pricing
 

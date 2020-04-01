@@ -1,14 +1,18 @@
-DOCKER_USER=rstudio
+DOCKER_USER=mcooney
+
 PROJECT_USER=kaybenleroll
 PROJECT_NAME=carinsurance_pricing
 
+#--user $(shell id -u):$(shell id -g)
 
 docker-build-image: Dockerfile
 	docker build -t ${PROJECT_USER}/${PROJECT_NAME} -f Dockerfile .
 
-docker-run: docker-stop
-	docker run --rm -d -p 8787:8787 \
+docker-run:
+	docker run --rm -d\
+	  -p 8787:8787 \
 	  -v "${PWD}":"/home/${DOCKER_USER}/${PROJECT_NAME}":rw \
+	  -e USER=${DOCKER_USER} \
 	  -e PASSWORD=quickpass \
 	  ${PROJECT_USER}/${PROJECT_NAME}
 

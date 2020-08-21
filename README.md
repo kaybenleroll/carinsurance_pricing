@@ -13,3 +13,14 @@ Charpentier: http://www.crcpress.com/product/isbn/9781466592599
 The dataset is too large for CRAN so is available here:
 
 http://cas.uqam.ca/
+
+
+The four files in this project can be found at the following URLs
+
+[10_carinspricing_exploration.html](10_carinspricing_exploration.html)
+
+[20_carinspricing_initmodel.html](20_carinspricing_initmodel.html)
+
+[30_carinspricing_calcprices.html](30_carinspricing_calcprices.html)
+
+[40_carinspricing_modelcheck.html](40_carinspricing_modelcheck.html)
